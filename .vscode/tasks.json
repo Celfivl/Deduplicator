@@ -8,23 +8,20 @@
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
-                "-I${workspaceFolder}/include",
-                "${workspaceFolder}/src/filesystem.c", 
-                "${workspaceFolder}/tests/test_fs.c",
+                "-I${workspaceFolder}\\include",
+                "${workspaceFolder}\\src\\filesystem.c",
+                "${workspaceFolder}\\tests\\test_fs.c",
                 "-o",
-                "${workspaceFolder}/test_suite.exe"
+                "${workspaceFolder}\\test_suite.exe"
             ],
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "C:\\temp\\Deduplicator"
             },
-            "problemMatcher": [
-                "$gcc"
-            ],
+            "problemMatcher": ["$gcc"],
             "group": {
                 "kind": "build",
                 "isDefault": true
-            },
-            "detail": "Compiles src and tests for Deduplicator"
+            }
         }
     ]
 }
