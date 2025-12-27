@@ -8,8 +8,8 @@
 #include <string.h>
 #include <errno.h>
 #include <dirent.h>
-#include <unistd.h> // For creating directories
-#include <sys/stat.h> // For chmod
+#include <unistd.h>   // For creating directories
+#include <sys/stat.h> // For stat
 
 void test_create_file_entry() {
     // Test case for create_file_entry
@@ -113,6 +113,35 @@ void test_scan_directory_recursive() {
     remove_dummy_directory_structure();
 }
 
+void test_metadata_retrieval() {
+    // Test case for metadata retrieval (file size and type)
+
+    // Test file metadata
+    const char *test_file_path = "test_metadata.txt";
+    const char *test_file_content = "This is a test file.";
+    FILE *fp = fopen(test_file_path, "w");
+    assert(fp != NULL);
+    fprintf(fp, test_file_content);
+    fclose(fp);
+
+    FileEntry *file_entry = create_file_entry(test_file_path);
+    assert(file_entry != NULL);
+    assert(file_entry->size == strlen(test_file_content));
+    assert(file_entry->is_directory == 0); // Ensure it's a file
+    free_file_entry(file_entry);
+    remove(test_file_path);
+
+    // Test directory metadata
+    const char *test_dir_path = "test_metadata_dir";
+    mkdir(test_dir_path);
+
+    FileEntry *dir_entry = create_file_entry(test_dir_path);
+    assert(dir_entry != NULL);
+    assert(dir_entry->is_directory == 1); // Ensure it's a directory
+    free_file_entry(dir_entry);
+    rmdir(test_dir_path);
+}
+
 
 int main() {
     // Create a dummy file for testing
@@ -130,6 +159,7 @@ int main() {
     test_free_file_entry();
     test_free_file_entry_null_entry();
     test_scan_directory_recursive();
+    test_metadata_retrieval();
 
     remove("test_file.txt"); // Clean up the dummy file
 
