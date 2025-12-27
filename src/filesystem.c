@@ -1,4 +1,3 @@
-// filesystem.c
 #include "filesystem.h"
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +26,7 @@ FileEntry* create_file_entry(const char *path) {
     if (stat(path, &file_stat) == 0) {
         entry->size = file_stat.st_size;
         entry->last_modified = file_stat.st_mtime;
+        entry->is_directory = S_ISDIR(file_stat.st_mode); // Set is_directory flag
     } else {
         // Handle error: could not get file stats
         free(entry->path);
