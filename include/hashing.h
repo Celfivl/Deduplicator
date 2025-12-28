@@ -2,6 +2,8 @@
 #ifndef HASHING_H
 #define HASHING_H
 
+#include <stddef.h>
+
 typedef struct HashContext HashContext; // Forward declaration
 
 // Initializes the hashing context.

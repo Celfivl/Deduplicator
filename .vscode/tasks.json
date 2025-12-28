@@ -3,19 +3,20 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "Build Test Suite",
+            "label": "Build Current Test",
             "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
                 "-I${workspaceFolder}\\include",
                 "${workspaceFolder}\\src\\filesystem.c",
-                "${workspaceFolder}\\tests\\test_fs.c",
+                "${workspaceFolder}\\src\\hashing.c",
+                "${file}", 
                 "-o",
-                "${workspaceFolder}\\test_suite.exe"
+                "${fileDirname}\\${fileBasenameNoExtension}.exe"
             ],
             "options": {
-                "cwd": "C:\\temp\\Deduplicator"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": ["$gcc"],
             "group": {

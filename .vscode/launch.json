@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run Tests (C)",
+            "name": "Debug Current Test",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/test_suite.exe",
+            "program": "${fileDirname}/${fileBasenameNoExtension}.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -20,7 +20,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Build Test Suite"
+            "preLaunchTask": "Build Current Test"
         }
     ]
 }
