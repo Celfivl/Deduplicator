@@ -15,4 +15,7 @@ void update_hash(HashContext* context, const void* data, size_t size);
 // Finalizes the hash and returns the hash value.
 unsigned char* finalize_hash(HashContext* context);
 
+// Hashes a file
+int hash_file(const char* filepath, HashContext* context);
+
 #endif
