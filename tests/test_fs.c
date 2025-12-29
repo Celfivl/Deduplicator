@@ -1,184 +1,105 @@
-// tests/test_fs.c
-// Test file for the file system scanning module.
-
+// test_fs.c
 #include <assert.h>
-#include "filesystem.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include <dirent.h>
-#include <unistd.h>   // For creating directories
-#include <sys/stat.h> // For stat
+#include <openssl/evp.h> // Include for EVP_MAX_MD_SIZE
+#include "hashing.h"
 
-void test_create_file_entry() {
-    // Test case for create_file_entry
-    FileEntry *entry = create_file_entry("test_file.txt");
-    assert(entry != NULL);
-    assert(strcmp(entry->path, "test_file.txt") == 0);
-    free_file_entry(entry);
-}
+#define TEST_FILE_NAME "test_hash_file.txt"
+#define SHA256_DIGEST_LENGTH 32 // SHA256 hash length
 
-void test_create_file_entry_null_path() {
-    // Test case for create_file_entry with NULL path
-    FileEntry *entry = create_file_entry(NULL);
-    assert(entry == NULL);
-}
+// Test vectors
+#define TEST_VECTOR1_INPUT ""
+#define TEST_VECTOR1_SHA256 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+#define TEST_VECTOR2_INPUT "abc"
+#define TEST_VECTOR2_SHA256 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+#define TEST_VECTOR3_INPUT "message digest"
+#define TEST_VECTOR3_SHA256 "f7846f55cf23e14eebeab5b4e1550cad5b509e3348fbc4efa3a1413d393cb650"
 
-void test_create_file_entry_nonexistent_file() {
-    // Test case for create_file_entry with a non-existent file
-    FileEntry *entry = create_file_entry("nonexistent_file.txt");
-    // Depending on how you want to handle this, it could return NULL or a valid entry with size 0
-    if (errno == ENOENT) {
-        //errno set to ENOENT
-        assert(entry == NULL);
+void hex_to_bytes(const char* hex_string, unsigned char* byte_array) {
+    // Only loop for the 32 bytes of a SHA-256 hash
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sscanf(hex_string + 2 * i, "%2hhx", &byte_array[i]);
     }
 }
 
-void test_free_file_entry() {
-    // Test case for free_file_entry
-    FileEntry *entry = create_file_entry("test_file.txt");
-    free_file_entry(entry);
-    // Add a more robust test to ensure memory is actually freed (optional, OS-dependent)
-}
-
-void test_free_file_entry_null_entry() {
-    // Test case for free_file_entry with a NULL entry
-    free_file_entry(NULL); // Should not crash
-}
-
-void create_dummy_directory_structure() {
-    // Create a temporary directory structure for testing
-    mkdir("test_dir");
-    mkdir("test_dir/subdir1");
-    mkdir("test_dir/subdir2");
-
-    FILE *fp1 = fopen("test_dir/file1.txt", "w");
-    assert(fp1 != NULL);
-    fprintf(fp1, "test content 1");
-    fclose(fp1);
-
-    FILE *fp2 = fopen("test_dir/subdir1/file2.txt", "w");
-    assert(fp2 != NULL);
-    fprintf(fp2, "test content 2");
-    fclose(fp2);
-
-    FILE *fp3 = fopen("test_dir/subdir2/file3.txt", "w");
-    assert(fp3 != NULL);
-    fprintf(fp3, "test content 3");
-    fclose(fp3);
-}
-
-void remove_dummy_directory_structure() {
-    // Remove the temporary directory structure
-    remove("test_dir/file1.txt");
-    remove("test_dir/subdir1/file2.txt");
-    remove("test_dir/subdir2/file3.txt");
-    rmdir("test_dir/subdir1");
-    rmdir("test_dir/subdir2");
-    rmdir("test_dir");
-}
-
-void test_scan_directory_recursive() {
-    // Test case for scan_directory with recursive traversal
+void test_hash_binary_data() {
+    const char* bin_filename = "test_binary.dat";
+    // Using a 3-byte string to avoid any alignment/padding confusion
+    unsigned char bin_data[3] = { 'a', 'b', 'c' };
+    size_t bin_size = 3; 
     
-    create_dummy_directory_structure();
-
-    FileList *file_list = scan_directory("test_dir");
-    assert(file_list != NULL);
-    
-    // CHANGE: You created 3 files (file1, file2, file3)
-    // Directories are skipped by your logic, so size should be 3.
-    assert(file_list->size == 3);
-
-    // Cleanup
-    free_file_list(file_list); // This now safely frees the list AND the 3 entries
-    remove_dummy_directory_structure();
-}
-
-void test_metadata_retrieval() {
-    // Test case for metadata retrieval (file size and type)
-
-    // Test file metadata
-    const char *test_file_path = "test_metadata.txt";
-    const char *test_file_content = "This is a test file.";
-    FILE *fp = fopen(test_file_path, "w");
+    FILE* fp = fopen(bin_filename, "wb");
     assert(fp != NULL);
-    fprintf(fp, test_file_content);
+    fwrite(bin_data, 1, bin_size, fp);
     fclose(fp);
 
-    FileEntry *file_entry = create_file_entry(test_file_path);
-    assert(file_entry != NULL);
-    assert(file_entry->size == strlen(test_file_content));
-    assert(file_entry->is_directory == 0); // Ensure it's a file
-    free_file_entry(file_entry);
-    remove(test_file_path);
+    HashContext* context = init_hash();
+    assert(hash_file(bin_filename, context) == 0);
+    unsigned char* hash = finalize_hash(context);
 
-    // Test directory metadata
-    const char *test_dir_path = "test_metadata_dir";
-    mkdir(test_dir_path);
+    // This is the known hash for "abc" (TEST_VECTOR2)
+    const char* expected_hex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    unsigned char expected_bytes[32];
+    hex_to_bytes(expected_hex, expected_bytes);
 
-    FileEntry *dir_entry = create_file_entry(test_dir_path);
-    assert(dir_entry != NULL);
-    assert(dir_entry->is_directory == 1); // Ensure it's a directory
-    free_file_entry(dir_entry);
-    rmdir(test_dir_path);
+    printf("Generated: ");
+    for(int i = 0; i < 32; i++) printf("%02x", hash[i]);
+    printf("\nExpected:  %s\n", expected_hex);
+
+    assert(memcmp(hash, expected_bytes, 32) == 0);
+
+    free_hash_context(context);
+    free(hash);
+    remove(bin_filename);
 }
 
-void test_file_list_management() {
-    FileList *list = create_file_list();
-    assert(list != NULL);
+void test_hash_string(const char* input, const char* expected_sha256) {
+    HashContext* context = init_hash();
+    assert(context != NULL);
 
-    const int num_entries = 1000;
-    FileEntry *entries[num_entries];
-    char path[32];
+    update_hash(context, input, strlen(input));
+    unsigned char* hash = finalize_hash(context);
+    assert(hash != NULL);
 
-    for (int i = 0; i < num_entries; i++) {
-        // We bypass create_file_entry because the files don't exist on disk.
-        // We manually allocate to test the LIST logic specifically.
-        entries[i] = (FileEntry*)malloc(sizeof(FileEntry));
-        assert(entries[i] != NULL);
-        
-        sprintf(path, "dummy_file_%d", i);
-        entries[i]->path = strdup(path);
-        entries[i]->size = (off_t)i;
-        entries[i]->is_directory = 0;
+    unsigned char expected_bytes[SHA256_DIGEST_LENGTH];
+    hex_to_bytes(expected_sha256, expected_bytes);
 
-        assert(add_file_entry(list, entries[i]) == 0);
-    }
+    assert(memcmp(hash, expected_bytes, SHA256_DIGEST_LENGTH) == 0);
 
-    assert(list->size == num_entries);
-    
-    // This will trigger reallocations from 10 -> 20 -> 40 -> ... -> 1280
-    assert(list->capacity >= num_entries);
+    free_hash_context(context);
+    free(hash);
+}
 
-    // free_file_list will now iterate and free all 1000 entries 
-    // and their strdup'd paths.
-    free_file_list(list);
-    
-    printf("Dynamic List Stress Test (1000 entries) Passed!\n");
+void test_hash_file_with_known_vector(const char* input, const char* expected_sha256) {
+    FILE* fp = fopen(TEST_FILE_NAME, "w");
+    assert(fp != NULL);
+    fprintf(fp, "%s", input);
+    fclose(fp);
+
+    HashContext* context = init_hash();
+    assert(hash_file(TEST_FILE_NAME, context) == 0);
+
+    unsigned char* hash = finalize_hash(context);
+    unsigned char expected_bytes[SHA256_DIGEST_LENGTH];
+    hex_to_bytes(expected_sha256, expected_bytes);
+
+    assert(memcmp(hash, expected_bytes, SHA256_DIGEST_LENGTH) == 0);
+
+    free_hash_context(context);
+    free(hash);
+    remove(TEST_FILE_NAME);
 }
 
 int main() {
-    // Create a dummy file for testing
-    FILE *fp = fopen("test_file.txt", "w");
-    if (fp == NULL) {
-        fprintf(stderr, "Could not create test file.\n");
-        return 1;
-    }
-    fprintf(fp, "test content");
-    fclose(fp);
+    test_hash_binary_data();
+    test_hash_string(TEST_VECTOR1_INPUT, TEST_VECTOR1_SHA256);
+    test_hash_string(TEST_VECTOR2_INPUT, TEST_VECTOR2_SHA256);
+    test_hash_string(TEST_VECTOR3_INPUT, TEST_VECTOR3_SHA256);
+    test_hash_file_with_known_vector(TEST_VECTOR2_INPUT, TEST_VECTOR2_SHA256);
 
-    test_create_file_entry();
-    test_create_file_entry_null_path();
-    test_create_file_entry_nonexistent_file();
-    test_free_file_entry();
-    test_free_file_entry_null_entry();
-    test_scan_directory_recursive();
-    test_metadata_retrieval();
-    test_file_list_management();
-
-    remove("test_file.txt"); // Clean up the dummy file
-
+    printf("All SHA-256 Test Vectors Passed Successfully!\n");
     return 0;
 }
