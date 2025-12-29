@@ -5,8 +5,8 @@
 
 #include <sys/types.h>
 #include <time.h>
-#include <dirent.h> // Include for directory operations
-#include <sys/stat.h> // Include for file stat operations
+#include <dirent.h>    // Include for directory operations
+#include <sys/stat.h>  // Include for file stat operations
 
 // Structure to hold file information.
 typedef struct FileEntry {
@@ -19,7 +19,26 @@ typedef struct FileEntry {
 FileEntry* create_file_entry(const char *path);
 void free_file_entry(FileEntry *entry);
 
+// Dynamic array structure
+typedef struct FileList {
+    FileEntry **entries; // Array of FileEntry pointers
+    size_t size;         // Current number of elements
+    size_t capacity;     // Maximum number of elements
+} FileList;
+
+// Function to initialize the file list
+FileList* create_file_list();
+
+// Function to add a file entry to the list
+int add_file_entry(FileList *list, FileEntry *entry);
+
+// Function to remove a file entry from the list
+int remove_file_entry(FileList *list, FileEntry *entry);
+
+//Function to free the file list and its entries
+void free_file_list(FileList *list);
+
 // New function to scan a directory
-FileEntry** scan_directory(const char *path, int *num_files);
+FileList* scan_directory(const char *path);
 
 #endif
