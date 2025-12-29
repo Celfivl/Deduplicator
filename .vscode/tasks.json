@@ -13,7 +13,8 @@
                 "${workspaceFolder}\\src\\hashing.c",
                 "${file}", 
                 "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe"
+                "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                "-lcrypto"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

@@ -1,29 +1,37 @@
 // hashing.c
 #include "hashing.h"
 #include <stdlib.h>
-#include <stdio.h> // For file I/O
-#include <errno.h> // For error handling
+#include <stdio.h>  // For file I/O
+#include <errno.h>  // For error handling
+#include <string.h> // For memcpy
+#include <openssl/sha.h> // Include for SHA-256 functions
 
 #define BUFFER_SIZE 4096 // Define a reasonable buffer size
-
-// Placeholder for the actual hashing context
-struct HashContext {
-    // Add necessary fields for your hashing algorithm
-};
+#define SHA256_DIGEST_LENGTH 32 // SHA256 hash length
 
 HashContext* init_hash() {
     HashContext* context = (HashContext*)malloc(sizeof(HashContext));
-    // Initialize the context here
+    if (context == NULL) {
+        return NULL;
+    }
+    if (SHA256_Init(&context->sha256_context) != 1) {
+        free(context);
+        return NULL;
+    }
     return context;
 }
 
 void update_hash(HashContext* context, const void* data, size_t size) {
-    // Update the hash with the given data
+    SHA256_Update(&context->sha256_context, data, size);
 }
 
 unsigned char* finalize_hash(HashContext* context) {
-    // Finalize the hash and return the hash value
-    return NULL; // Placeholder
+    unsigned char* hash = (unsigned char*)malloc(SHA256_DIGEST_LENGTH);
+    if (hash == NULL) {
+        return NULL;
+    }
+    SHA256_Final(hash, &context->sha256_context);
+    return hash;
 }
 
 // New function to hash a file

@@ -3,8 +3,13 @@
 #define HASHING_H
 
 #include <stddef.h>
+#include <openssl/sha.h> // Include for SHA-256 functions
 
 typedef struct HashContext HashContext; // Forward declaration
+
+struct HashContext {
+    SHA256_CTX sha256_context;
+};
 
 // Initializes the hashing context.
 HashContext* init_hash();
