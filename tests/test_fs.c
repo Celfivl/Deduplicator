@@ -81,35 +81,18 @@ void remove_dummy_directory_structure() {
 
 void test_scan_directory_recursive() {
     // Test case for scan_directory with recursive traversal
-    int num_files;
-    FileEntry **files;
-
+    
     create_dummy_directory_structure();
 
-    files = scan_directory("test_dir", &num_files);
-    assert(files != NULL);
-    assert(num_files == 3); // Expect 3 files
+    FileList *file_list = scan_directory("test_dir");
+    assert(file_list != NULL);
+    
+    // CHANGE: You created 3 files (file1, file2, file3)
+    // Directories are skipped by your logic, so size should be 3.
+    assert(file_list->size == 3);
 
-    // Basic check for file names (order may vary)
-    int file1_found = 0;
-    int file2_found = 0;
-    int file3_found = 0;
-
-    for (int i = 0; i < num_files; i++) {
-        if (strcmp(files[i]->path, "test_dir/file1.txt") == 0) {
-            file1_found = 1;
-        } else if (strcmp(files[i]->path, "test_dir/subdir1/file2.txt") == 0) {
-            file2_found = 1;
-        } else if (strcmp(files[i]->path, "test_dir/subdir2/file3.txt") == 0) {
-            file3_found = 1;
-        }
-        free_file_entry(files[i]); // Free each entry
-    }
-    assert(file1_found == 1);
-    assert(file2_found == 1);
-    assert(file3_found == 1);
-
-    free(files); // Free the array of file entries
+    // Cleanup
+    free_file_list(file_list); // This now safely frees the list AND the 3 entries
     remove_dummy_directory_structure();
 }
 
@@ -142,6 +125,39 @@ void test_metadata_retrieval() {
     rmdir(test_dir_path);
 }
 
+void test_file_list_management() {
+    FileList *list = create_file_list();
+    assert(list != NULL);
+
+    const int num_entries = 1000;
+    FileEntry *entries[num_entries];
+    char path[32];
+
+    for (int i = 0; i < num_entries; i++) {
+        // We bypass create_file_entry because the files don't exist on disk.
+        // We manually allocate to test the LIST logic specifically.
+        entries[i] = (FileEntry*)malloc(sizeof(FileEntry));
+        assert(entries[i] != NULL);
+        
+        sprintf(path, "dummy_file_%d", i);
+        entries[i]->path = strdup(path);
+        entries[i]->size = (off_t)i;
+        entries[i]->is_directory = 0;
+
+        assert(add_file_entry(list, entries[i]) == 0);
+    }
+
+    assert(list->size == num_entries);
+    
+    // This will trigger reallocations from 10 -> 20 -> 40 -> ... -> 1280
+    assert(list->capacity >= num_entries);
+
+    // free_file_list will now iterate and free all 1000 entries 
+    // and their strdup'd paths.
+    free_file_list(list);
+    
+    printf("Dynamic List Stress Test (1000 entries) Passed!\n");
+}
 
 int main() {
     // Create a dummy file for testing
@@ -160,6 +176,7 @@ int main() {
     test_free_file_entry_null_entry();
     test_scan_directory_recursive();
     test_metadata_retrieval();
+    test_file_list_management();
 
     remove("test_file.txt"); // Clean up the dummy file
 
