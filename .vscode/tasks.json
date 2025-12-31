@@ -12,6 +12,7 @@
                 "${workspaceFolder}\\src\\filesystem.c",
                 "${workspaceFolder}\\src\\hashing.c",
                 "${workspaceFolder}\\src\\datastruct.c", 
+                "${workspaceFolder}\\src\\deduplicator.c",
                 "${file}", 
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",

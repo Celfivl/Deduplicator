@@ -1,80 +1,84 @@
-// deduplicator.c
 #include "deduplicator.h"
 #include "filesystem.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#define INITIAL_GROUP_CAPACITY 4
 
-// Structure to store file information (size and path)
-typedef struct FileInfo {
-    char *filepath;
-    off_t size;
-    struct FileInfo *next;
-} FileInfo;
-
-// Function to find files with matched sizes in a directory
-FilePair *find_matched_files(const char *directory_path) {
-    // 1. Get all files in the directory
-    FilePair *matched_file_list = NULL;
-    char **all_files = get_all_files(directory_path);
-    if (all_files == NULL) {
-        fprintf(stderr, "Error: Could not get file list.\n");
-        return NULL;
+static SizeGroup *find_group(SizeGroup *head, off_t size) {
+    for (SizeGroup *cur = head; cur != NULL; cur = cur->next) {
+        if (cur->size == size) return cur;
     }
+    return NULL;
+}
 
-    // Create a linked list to store file information
-    FileInfo *file_list = NULL;
-    for (int i = 0; all_files[i] != NULL; i++) {
-        struct stat file_stat;
-        if (stat(all_files[i], &file_stat) == 0) {
-            FileInfo *new_file_info = (FileInfo *)malloc(sizeof(FileInfo));
-            if (!new_file_info) {
-                perror("Failed to allocate memory for file info");
-                exit(EXIT_FAILURE); // Handle memory allocation failure
-            }
-            new_file_info->filepath = strdup(all_files[i]);
-            new_file_info->size = file_stat.st_size;
-            new_file_info->next = file_list;
-            file_list = new_file_info;
-        } else {
-            fprintf(stderr, "Error: Could not get file size for %s\n", all_files[i]);
-            // Handle the error, maybe skip the file
+static SizeGroup *add_group(SizeGroup **head, off_t size) {
+    SizeGroup *g = (SizeGroup *)malloc(sizeof(SizeGroup));
+    if (!g) {
+        perror("malloc SizeGroup");
+        exit(EXIT_FAILURE);
+    }
+    g->size = size;
+    g->filepaths = (char **)malloc(INITIAL_GROUP_CAPACITY * sizeof(char *));
+    if (!g->filepaths) {
+        perror("malloc filepaths");
+        exit(EXIT_FAILURE);
+    }
+    g->count = 0;
+    g->capacity = INITIAL_GROUP_CAPACITY;
+    g->next = *head;
+    *head = g;
+    return g;
+}
+
+SizeGroup *group_files_by_size(FileEntry **files, int num_files) {
+    SizeGroup *head = NULL;
+    if (!files || num_files <= 0) return NULL;
+
+    for (int i = 0; i < num_files; i++) {
+        FileEntry *f = files[i];
+        if (!f) continue;
+
+        SizeGroup *g = find_group(head, f->size);
+        if (!g) {
+            g = add_group(&head, f->size);
         }
-        free(all_files[i]); // Free the filepath obtained from get_all_files
-    }
-    free(all_files); // Free the array itself
 
-    // Iterate through the file list and find pairs with matching sizes
-    FileInfo *current_file = file_list;
-    while (current_file != NULL) {
-        FileInfo *inner_file = current_file->next;
-        while (inner_file != NULL) {
-            if (current_file->size == inner_file->size) {
-                // Found a pair with matching sizes
-                FilePair *new_pair = (FilePair *)malloc(sizeof(FilePair));
-                if (!new_pair) {
-                    perror("Failed to allocate memory for file pair");
-                    exit(EXIT_FAILURE);
-                }
-                new_pair->file1 = strdup(current_file->filepath);
-                new_pair->file2 = strdup(inner_file->filepath);
-                new_pair->next = matched_file_list;
-                matched_file_list = new_pair;
+        if (g->count == g->capacity) {
+            g->capacity *= 2;
+            char **new_paths = (char **)realloc(g->filepaths,
+                                                g->capacity * sizeof(char *));
+            if (!new_paths) {
+                perror("realloc filepaths");
+                exit(EXIT_FAILURE);
             }
-            inner_file = inner_file->next;
+            g->filepaths = new_paths;
         }
-        current_file = current_file->next;
+
+        g->filepaths[g->count] = strdup(f->path);
+        if (!g->filepaths[g->count]) {
+            perror("strdup path");
+            exit(EXIT_FAILURE);
+        }
+        g->count++;
     }
 
-    // Free the file list
-    current_file = file_list;
-    while (current_file != NULL) {
-        FileInfo *next = current_file->next;
-        free(current_file->filepath);
-        free(current_file);
-        current_file = next;
-    }
+    return head;
+}
 
-    return matched_file_list;
+SizeGroup *find_matched_files(const char *directory_path) {
+    int num_files = 0;
+    FileEntry **files = scan_directory(directory_path, &num_files);
+    if (!files) return NULL;
+
+    SizeGroup *groups = group_files_by_size(files, num_files);
+
+    // Safe: SizeGroup has its own copies of paths
+    for (int i = 0; i < num_files; i++) {
+        free_file_entry(files[i]);
+    }
+    free(files);
+
+    return groups;
 }

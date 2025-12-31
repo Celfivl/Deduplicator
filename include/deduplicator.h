@@ -1,26 +1,23 @@
-// deduplicator.h
 #ifndef DEDUPLICATOR_H
 #define DEDUPLICATOR_H
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "filesystem.h" // Include the FileList and FileEntry structures
 
-// Structure to represent a duplicate file pair (place holder, not used yet)
-typedef struct DuplicatePair {
-    char *file1;
-    char *file2;
-    struct DuplicatePair *next;
-} DuplicatePair;
+typedef struct SizeGroup {
+    off_t size;
+    char **filepaths;   // SizeGroup owns these (via strdup)
+    size_t count;
+    size_t capacity;
+    struct SizeGroup *next;
+} SizeGroup;
 
-// Structure to represent a file pair
-typedef struct FilePair {
-    char *file1;
-    char *file2;
-    struct FilePair *next;
-} FilePair;
+// Group files by size
+SizeGroup *group_files_by_size(FileEntry **files, int num_files);
 
-// Function to find files with matched sizes in a directory
-FilePair *find_matched_files(const char *directory_path);
+// Convenience wrapper for a directory path
+SizeGroup *find_matched_files(const char *directory_path);
 
 #endif
