@@ -1,3 +1,4 @@
+// deduplicator.h
 #ifndef DEDUPLICATOR_H
 #define DEDUPLICATOR_H
 
@@ -14,10 +15,20 @@ typedef struct SizeGroup {
     struct SizeGroup *next;
 } SizeGroup;
 
+// Structure to represent a duplicate file pair
+typedef struct DuplicatePair {
+    char *file1;
+    char *file2;
+    struct DuplicatePair *next;
+} DuplicatePair;
+
 // Group files by size
 SizeGroup *group_files_by_size(FileEntry **files, int num_files);
 
-// Convenience wrapper for a directory path
-SizeGroup *find_matched_files(const char *directory_path);
+// Function to find duplicate files in a directory
+DuplicatePair *find_duplicates(const char *directory_path);
+
+// Function to compare two files byte by byte
+int compare_files(const char *file1, const char *file2);
 
 #endif

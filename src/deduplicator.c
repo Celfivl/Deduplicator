@@ -1,5 +1,8 @@
+// deduplicator.c
 #include "deduplicator.h"
 #include "filesystem.h"
+#include "hashing.h"
+#include "datastruct.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -67,18 +70,133 @@ SizeGroup *group_files_by_size(FileEntry **files, int num_files) {
     return head;
 }
 
-SizeGroup *find_matched_files(const char *directory_path) {
+// Function to compare two files byte by byte
+int compare_files(const char *file1, const char *file2) {
+    FILE *fp1 = fopen(file1, "rb");
+    if (!fp1) {
+        perror("fopen file1");
+        return 0;
+    }
+
+    FILE *fp2 = fopen(file2, "rb");
+    if (!fp2) {
+        perror("fopen file2");
+        fclose(fp1);
+        return 0;
+    }
+
+    int ch1, ch2;
+    while ((ch1 = fgetc(fp1)) != EOF && (ch2 = fgetc(fp2)) != EOF) {
+        if (ch1 != ch2) {
+            fclose(fp1);
+            fclose(fp2);
+            return 0; // Files are different
+        }
+    }
+
+    if (fgetc(fp1) != EOF || fgetc(fp2) != EOF) {
+        // One file is longer than the other
+        fclose(fp1);
+        fclose(fp2);
+        return 0;
+    }
+
+    fclose(fp1);
+    fclose(fp2);
+    return 1; // Files are identical
+}
+
+
+DuplicatePair *find_duplicates(const char *directory_path) {
     int num_files = 0;
     FileEntry **files = scan_directory(directory_path, &num_files);
     if (!files) return NULL;
 
     SizeGroup *groups = group_files_by_size(files, num_files);
 
-    // Safe: SizeGroup has its own copies of paths
     for (int i = 0; i < num_files; i++) {
         free_file_entry(files[i]);
     }
     free(files);
 
-    return groups;
+    // Create a hash table
+    HashTable *hash_table = create_hash_table();
+    if (hash_table == NULL) {
+        fprintf(stderr, "Error: Could not create hash table.\n");
+        // Free the SizeGroup list
+        while (groups != NULL) {
+            SizeGroup *next = groups->next;
+            for (size_t i = 0; i < groups->count; i++) {
+                free(groups->filepaths[i]); // Free the duplicated filepaths
+            }
+            free(groups->filepaths);
+            free(groups);
+            groups = next;
+        }
+        return NULL;
+    }
+
+    // Now hash the files and compare byte by byte if needed
+    DuplicatePair *duplicate_list = NULL;
+    SizeGroup *current_group = groups;
+    while (current_group != NULL) {
+        if (current_group->count > 1) {
+            // Hash all files in the group and add them to the hash table
+            for (size_t i = 0; i < current_group->count; i++) {
+                char *filepath = current_group->filepaths[i];
+                char *hash = hash_file(filepath);
+
+                if (hash == NULL) {
+                    fprintf(stderr, "Error: Could not hash file %s\n", filepath);
+                    continue; // Skip to the next file
+                }
+
+                // Lookup the hash in the hash table
+                FilePathNode *existing_file_paths = lookup_hash(hash_table, hash);
+
+                if (existing_file_paths != NULL) {
+                    // Hash collision! Compare the files byte by byte with all existing files with the same hash
+                    FilePathNode *current_existing_file = existing_file_paths;
+                    while(current_existing_file != NULL){
+                         if (compare_files(filepath, current_existing_file->filepath)) {
+                            // Files are identical, create a DuplicatePair
+                            DuplicatePair *new_pair = (DuplicatePair *)malloc(sizeof(DuplicatePair));
+                            if (!new_pair) {
+                                perror("malloc DuplicatePair");
+                                exit(EXIT_FAILURE);
+                            }
+                            new_pair->file1 = strdup(filepath);
+                            new_pair->file2 = strdup(current_existing_file->filepath);
+                            new_pair->next = duplicate_list;
+                            duplicate_list = new_pair;
+                            break;
+                        }
+                        current_existing_file = current_existing_file->next;
+                    }
+                    free(hash); //Free the hash after use
+                } else {
+                    // Hash not found, insert it into the hash table
+                    insert_hash(hash_table, hash, filepath);
+                    free(hash); //Free the hash after use
+                }
+            }
+        }
+        current_group = current_group->next;
+    }
+
+    // Free the SizeGroup list structures, but NOT the filepaths.
+    while (groups != NULL) {
+        SizeGroup *next = groups->next;
+        for (size_t i = 0; i < groups->count; i++) {
+            free(groups->filepaths[i]); // This frees the strdup from group_files_by_size
+        }
+        free(groups->filepaths);
+        free(groups);
+        groups = next;
+    }
+
+    free_hash_table(hash_table);
+
+    // This list contains the final strdup copies. 
+    return duplicate_list;
 }
