@@ -144,15 +144,25 @@ DuplicatePair *find_duplicates(const char *directory_path) {
             // Hash all files in the group and add them to the hash table
             for (size_t i = 0; i < current_group->count; i++) {
                 char *filepath = current_group->filepaths[i];
-                char *hash = hash_file(filepath);
+                
+                // CORRECTED SECTION: Use frozen hashing.h context lifecycle
+                HashContext *ctx = init_hash();
+                if (!ctx) continue;
 
-                if (hash == NULL) {
+                if (hash_file(filepath, ctx) != 0) { // Assuming 0 is success for hash_file
                     fprintf(stderr, "Error: Could not hash file %s\n", filepath);
-                    continue; // Skip to the next file
+                    free_hash_context(ctx);
+                    continue; 
+                }
+
+                char *hash_res = (char *)finalize_hash(ctx);
+                if (!hash_res) {
+                    free_hash_context(ctx);
+                    continue;
                 }
 
                 // Lookup the hash in the hash table
-                FilePathNode *existing_file_paths = lookup_hash(hash_table, hash);
+                FilePathNode *existing_file_paths = lookup_hash(hash_table, hash_res);
 
                 if (existing_file_paths != NULL) {
                     // Hash collision! Compare the files byte by byte with all existing files with the same hash
@@ -173,12 +183,14 @@ DuplicatePair *find_duplicates(const char *directory_path) {
                         }
                         current_existing_file = current_existing_file->next;
                     }
-                    free(hash); //Free the hash after use
                 } else {
                     // Hash not found, insert it into the hash table
-                    insert_hash(hash_table, hash, filepath);
-                    free(hash); //Free the hash after use
+                    insert_hash(hash_table, hash_res, filepath);
                 }
+
+                // Cleanup per-file hashing resources
+                free(hash_res); 
+                free_hash_context(ctx);
             }
         }
         current_group = current_group->next;

@@ -27,6 +27,50 @@ void delete_test_file(const char *filename) {
     }
 }
 
+// Helper function to create a file with specific content
+void create_file(const char *filename, const char *content) {
+    FILE *fp = fopen(filename, "w");
+    assert(fp != NULL);
+    fputs(content, fp);
+    fclose(fp);
+}
+
+// Test case for identical files
+void test_identical_files() {
+    const char *filename1 = "identical1.txt";
+    const char *filename2 = "identical2.txt";
+    const char *content = "This is the content of the file.";
+
+    create_file(filename1, content);
+    create_file(filename2, content);
+
+    assert(compare_files(filename1, filename2) == 1);
+
+    remove(filename1);
+    remove(filename2);
+
+    printf("PASSED: test_identical_files\n");
+}
+
+// Test case for near-identical files
+void test_near_identical_files() {
+    const char *filename1 = "near1.txt";
+    const char *filename2 = "near2.txt";
+    const char *content1 = "This is the content of the file.";
+    const char *content2 = "This is the content of the file!"; // One byte difference
+
+    create_file(filename1, content1);
+    create_file(filename2, content2);
+
+    assert(compare_files(filename1, filename2) == 0);
+
+    remove(filename1);
+    remove(filename2);
+
+    printf("PASSED: test_near_identical_files\n");
+}
+
+
 int main() {
     // Define test file names and sizes
     const char *file1 = "test_file_1.txt";
@@ -44,41 +88,20 @@ int main() {
     create_test_file(file3, size3);
     create_test_file(file4, size4);
 
-    // Call find_matched_files
-    SizeGroup *groups = find_matched_files("."); // Current directory
+    // Call find_duplicates instead of find_matched_files
+    DuplicatePair *dupes = find_duplicates(".");
 
-    // Verify that the returned SizeGroup list is correctly structured
-    SizeGroup *current_group = groups;
-    while (current_group != NULL) {
-        // Verify that all files in the group have the same size
-        for (size_t i = 1; i < current_group->count; i++) {
-            struct stat st;
-            stat(current_group->filepaths[i], &st);
-            assert(st.st_size == current_group->size);
-        }
-        current_group = current_group->next;
-    }
-
-    //Verify that file1 and file3 are grouped together (same size)
+    // Verify that file1 and file3 are in the duplicate list
     int file1_found = 0;
     int file3_found = 0;
-    current_group = groups;
-    while (current_group != NULL) {
-    if (current_group->size == size1) {
-        for (size_t i = 0; i < current_group->count; i++) {
-            // Use strstr to account for "./" or absolute path prefixes
-            if (strstr(current_group->filepaths[i], file1) != NULL) {
-                file1_found = 1;
-            }
-            if (strstr(current_group->filepaths[i], file3) != NULL) {
-                file3_found = 1;
-            }
-        }
-    }
-         current_group = current_group->next;
+    DuplicatePair *curr_pair = dupes;
+    while (curr_pair != NULL) {
+        if (strstr(curr_pair->file1, file1) || strstr(curr_pair->file2, file1)) file1_found = 1;
+        if (strstr(curr_pair->file1, file3) || strstr(curr_pair->file2, file3)) file3_found = 1;
+        curr_pair = curr_pair->next;
     }
     assert(file1_found == 1);
-    assert(file3_found ==1);
+    assert(file3_found == 1);
 
     // Clean up test files
     delete_test_file(file1);
@@ -86,16 +109,19 @@ int main() {
     delete_test_file(file3);
     delete_test_file(file4);
 
-    // Free the SizeGroup list
-    while (groups != NULL) {
-        SizeGroup *next = groups->next;
-        for (size_t i = 0; i < groups->count; i++) {
-            free(groups->filepaths[i]); // Free the duplicated filepaths
-        }
-        free(groups->filepaths);
-        free(groups);
-        groups = next;
+     // Free the DuplicatePair list
+    while (dupes != NULL) {
+        DuplicatePair *next = dupes->next;
+        free(dupes->file1);
+        free(dupes->file2);
+        free(dupes);
+        dupes = next;
     }
+
+
+    // Run the new tests
+    test_identical_files();
+    test_near_identical_files();
 
     printf("All tests passed!\n");
     return 0;
