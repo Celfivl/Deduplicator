@@ -212,3 +212,37 @@ DuplicatePair *find_duplicates(const char *directory_path) {
     // This list contains the final strdup copies. 
     return duplicate_list;
 }
+
+void mark_duplicates(char **all_paths, int num_paths,
+                     DuplicatePair *pairs_head, MarkedFile *out_marks) {
+    if (!all_paths || !out_marks) return;
+
+    HashTable *dup_lookup = create_hash_table();
+    if (!dup_lookup) {
+        fprintf(stderr, "Error: could not create dup lookup table\n");
+        return;
+    }
+
+    // Build lookup from DuplicatePair list
+    for (DuplicatePair *p = pairs_head; p != NULL; p = p->next) {
+        if (p->file1) insert_hash(dup_lookup, p->file1, "dup");
+        if (p->file2) insert_hash(dup_lookup, p->file2, "dup");
+    }
+
+    // Mark each path
+    for (int i = 0; i < num_paths; i++) {
+        out_marks[i].path = all_paths[i];
+        if (!all_paths[i]) {
+            out_marks[i].is_duplicate = 0;
+            continue;
+        }
+
+        if (lookup_hash(dup_lookup, all_paths[i]) != NULL) {
+            out_marks[i].is_duplicate = 1;
+        } else {
+            out_marks[i].is_duplicate = 0;
+        }
+    }
+
+    free_hash_table(dup_lookup);
+}
