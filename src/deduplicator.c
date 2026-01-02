@@ -9,6 +9,18 @@
 
 #define INITIAL_GROUP_CAPACITY 4
 
+// 32-byte digest -> 65-byte hex string (64 chars + '\0')
+static char *digest_to_hex(const unsigned char *digest) {
+    char *hex = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+    if (!hex) return NULL;
+
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(hex + (i * 2), "%02x", digest[i]);
+    }
+    hex[SHA256_DIGEST_LENGTH * 2] = '\0';
+    return hex;
+}
+
 static SizeGroup *find_group(SizeGroup *head, off_t size) {
     for (SizeGroup *cur = head; cur != NULL; cur = cur->next) {
         if (cur->size == size) return cur;
@@ -155,44 +167,40 @@ DuplicatePair *find_duplicates(const char *directory_path) {
                     continue; 
                 }
 
-                char *hash_res = (char *)finalize_hash(ctx);
-                if (!hash_res) {
+                unsigned char *digest = finalize_hash(ctx);
+                if (!digest) {
+                    free_hash_context(ctx);
+                    continue;
+            }
+
+                char *hash_hex = digest_to_hex(digest);
+                free(digest);
+                if (!hash_hex) {
                     free_hash_context(ctx);
                     continue;
                 }
-
                 // Lookup the hash in the hash table
-                FilePathNode *existing_file_paths = lookup_hash(hash_table, hash_res);
+                FilePathNode *existing_file_paths = lookup_hash(hash_table, hash_hex);
 
                 if (existing_file_paths != NULL) {
-                    // Hash collision! Compare the files byte by byte with all existing files with the same hash
-                    FilePathNode *current_existing_file = existing_file_paths;
-                    while(current_existing_file != NULL){
-                         if (compare_files(filepath, current_existing_file->filepath)) {
-                            // Files are identical, create a DuplicatePair
-                            DuplicatePair *new_pair = (DuplicatePair *)malloc(sizeof(DuplicatePair));
-                            if (!new_pair) {
-                                perror("malloc DuplicatePair");
-                                exit(EXIT_FAILURE);
-                            }
-                            new_pair->file1 = strdup(filepath);
-                            new_pair->file2 = strdup(current_existing_file->filepath);
-                            new_pair->next = duplicate_list;
-                            duplicate_list = new_pair;
-                            break;
-                        }
-                        current_existing_file = current_existing_file->next;
-                    }
+                // Add to duplicate list
+                DuplicatePair *new_pair = malloc(sizeof(DuplicatePair));
+                if (new_pair) {
+                    new_pair->file1 = strdup(existing_file_paths->filepath);
+                    new_pair->file2 = strdup(filepath);
+                    new_pair->next = duplicate_list;
+                    duplicate_list = new_pair;
+                }   
+                // use `hash_hex` only as key; don't free until after lookup/insert
                 } else {
-                    // Hash not found, insert it into the hash table
-                    insert_hash(hash_table, hash_res, filepath);
+                    insert_hash(hash_table, hash_hex, filepath);
                 }
 
-                // Cleanup per-file hashing resources
-                free(hash_res); 
+                // After using `hash_hex`
+                free(hash_hex);
                 free_hash_context(ctx);
+                }
             }
-        }
         current_group = current_group->next;
     }
 
@@ -231,18 +239,35 @@ void mark_duplicates(char **all_paths, int num_paths,
 
     // Mark each path
     for (int i = 0; i < num_paths; i++) {
-        out_marks[i].path = all_paths[i];
-        if (!all_paths[i]) {
-            out_marks[i].is_duplicate = 0;
-            continue;
-        }
+    out_marks[i].path = all_paths[i];
 
-        if (lookup_hash(dup_lookup, all_paths[i]) != NULL) {
-            out_marks[i].is_duplicate = 1;
-        } else {
-            out_marks[i].is_duplicate = 0;
-        }
+    if (!all_paths[i]) {
+        out_marks[i].is_duplicate = 0;
+        continue;
     }
 
+    if (lookup_hash(dup_lookup, all_paths[i]) != NULL) {
+        out_marks[i].is_duplicate = 1;
+    } else {
+        out_marks[i].is_duplicate = 0;
+    }
+}
+
     free_hash_table(dup_lookup);
+}
+
+void free_duplicate_pairs(DuplicatePair *head) {
+    DuplicatePair *current = head;
+    while (current != NULL) {
+        DuplicatePair *next = current->next;
+        
+        // Free the strings we strdup'd in find_duplicates
+        if (current->file1) free(current->file1);
+        if (current->file2) free(current->file2);
+        
+        // Free the node itself
+        free(current);
+        
+        current = next;
+    }
 }
