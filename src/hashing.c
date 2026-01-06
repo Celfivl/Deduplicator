@@ -7,18 +7,10 @@
 #include <openssl/evp.h> // Include for EVP functions
 
 #define BUFFER_SIZE 4096 // Define a reasonable buffer size
-#define SHA256_DIGEST_LENGTH 32 // SHA256 hash length
-
-struct HashContext {
-    EVP_MD_CTX* md_context;
-    const EVP_MD* md;
-};
 
 HashContext* init_hash() {
     HashContext* context = (HashContext*)malloc(sizeof(HashContext));
-    if (context == NULL) {
-        return NULL;
-    }
+    if (context == NULL) return NULL;
 
     context->md = EVP_MD_fetch(NULL, "SHA256", NULL);
     if (context->md == NULL) {
@@ -47,17 +39,25 @@ void update_hash(HashContext* context, const void* data, size_t size) {
     EVP_DigestUpdate(context->md_context, data, size);
 }
 
-unsigned char* finalize_hash(HashContext* context) {
-    unsigned char* hash = (unsigned char*)malloc(SHA256_DIGEST_LENGTH);
-    if (hash == NULL) return NULL;
-
+char* finalize_hash(HashContext* context) {
+    unsigned char bin_hash[HASH_DIGEST_LENGTH];
     unsigned int hash_len;
+
     // Finalize the digest
-    if (EVP_DigestFinal_ex(context->md_context, hash, &hash_len) != 1) {
-        free(hash);
+    if (EVP_DigestFinal_ex(context->md_context, bin_hash, &hash_len) != 1) {
         return NULL;
     }
-    return hash;
+
+    // Convert binary hash to hex string (2 chars per byte + null terminator)
+    char* hex_str = malloc(HASH_DIGEST_LENGTH * 2 + 1);
+    if (hex_str == NULL) return NULL;
+
+    for (int i = 0; i < HASH_DIGEST_LENGTH; i++) {
+        sprintf(&hex_str[i * 2], "%02x", bin_hash[i]);
+    }
+    hex_str[HASH_DIGEST_LENGTH * 2] = '\0';
+
+    return hex_str;
 }
 
 void free_hash_context(HashContext* context) {
@@ -68,8 +68,16 @@ void free_hash_context(HashContext* context) {
     }
 }
 
+// Resets the hash context for re-use
+int reset_hash(HashContext* context) {
+    if (!context || !context->md_context || !context->md) return -1;
+    return (EVP_DigestInit_ex(context->md_context, context->md, NULL) == 1) ? 0 : -1;
+}
+
 // New function to hash a file
 int hash_file(const char* filepath, HashContext* context) {
+    if (reset_hash(context) != 0) return -1;
+
     FILE* file = fopen(filepath, "rb"); // Open in binary mode
     if (file == NULL) {
         perror("fopen");

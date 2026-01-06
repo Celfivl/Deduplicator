@@ -1,9 +1,12 @@
-// hashing.h
+//hashing.h
 #ifndef HASHING_H
 #define HASHING_H
 
 #include <stddef.h>
 #include <openssl/evp.h> // Include for EVP functions
+
+// SHA-256 digest size in bytes
+#define HASH_DIGEST_LENGTH 32  
 
 typedef struct HashContext HashContext; // Forward declaration
 
@@ -18,13 +21,16 @@ HashContext* init_hash();
 // Updates the hash with the given data.
 void update_hash(HashContext* context, const void* data, size_t size);
 
-// Finalizes the hash and returns the hash value.
-unsigned char* finalize_hash(HashContext* context);
+// Finalizes the hash and returns the hash value as a hex string.
+char* finalize_hash(HashContext* context);
 
 //Frees the hash context
 void free_hash_context(HashContext* context);
 
 // Hashes a file
 int hash_file(const char* filepath, HashContext* context);
+
+// Resets the hash context for a new file
+int reset_hash(HashContext* context);
 
 #endif
