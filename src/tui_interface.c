@@ -11,7 +11,7 @@
 #endif
 
 // --- Global UI State ---
-WINDOW *main_window = NULL, *dir_window = NULL;
+WINDOW *main_window = NULL, *dir_window = NULL, *progress_window = NULL; // Added progress_window
 FileInfoList directory_list;
 int selected_dir = 0, scroll_offset = 0;
 char final_selected_path[1024] = "";
@@ -50,8 +50,17 @@ int init_tui() {
     noecho(); cbreak(); curs_set(0); keypad(stdscr, TRUE);
     init_file_list(&directory_list);
     populate_directory_list(current_browsing_path);
-    dir_window = newwin(18, 70, (LINES - 18) / 2, (COLS - 70) / 2);
-    show_directory_selection_screen();
+
+    // Create windows
+    int dir_height = 18, dir_width = 70;
+    dir_window = newwin(dir_height, dir_width, (LINES - dir_height) / 2, (COLS - dir_width) / 2);
+
+    int progress_height = 10, progress_width = 60;
+    progress_window = newwin(progress_height, progress_width, (LINES - progress_height) / 2, (COLS - progress_width) / 2); // Create progress window
+    
+    if(progress_window == NULL)
+    	show_directory_selection_screen();
+
     return 0;
 }
 
@@ -59,6 +68,7 @@ int init_tui() {
 void end_tui() {
     free_ui_list(&directory_list);
     if (dir_window) delwin(dir_window);
+    if (progress_window) delwin(progress_window); // Delete progress window
     endwin();
 }
 
@@ -121,6 +131,56 @@ void show_directory_selection_screen() {
     wnoutrefresh(stdscr); wnoutrefresh(dir_window); doupdate();
 }
 
+//Shows the scan progress screen
+void show_scan_progress_screen() {
+    werase(progress_window);
+    box(progress_window, 0, 0);
+    mvwprintw(progress_window, 1, 2, "Scan Progress:");
+    mvwprintw(progress_window, 3, 2, "Progress: [----------] 0%%");
+    mvwprintw(progress_window, 5, 2, "Scanning: ");
+    wrefresh(progress_window);
+}
+
+// Updates the scan progress screen with process-stage focus
+void update_scan_progress(const char *current_process, int percentage, int files_found) {
+    if (!progress_window) return;
+
+    werase(progress_window);
+    box(progress_window, 0, 0);
+    mvwprintw(progress_window, 1, 2, "Deduplicator Engine: Active");
+
+    // Progress bar logic
+    int bar_width = 30;
+    int filled = (percentage * bar_width) / 100;
+    mvwprintw(progress_window, 3, 2, "Progress: [");
+    wattron(progress_window, A_REVERSE);
+    for (int i = 0; i < filled; i++) waddch(progress_window, ' ');
+    wattroff(progress_window, A_REVERSE);
+    for (int i = filled; i < bar_width; i++) waddch(progress_window, '-');
+    wprintw(progress_window, "] %d%%", percentage);
+
+    // Display the specific process step and count
+    mvwprintw(progress_window, 5, 2, "Step:  %-40s", current_process);
+    mvwprintw(progress_window, 7, 2, "Items: %-10d", files_found);
+
+    wrefresh(progress_window);
+}
+
+//Switches to the scan progress view
+void switch_to_progress_view() {
+    // Hide the directory selection window
+    if(dir_window != NULL){
+        wbkgd(dir_window, COLOR_PAIR(0)); // Reset background color
+        wclear(dir_window);
+        wrefresh(dir_window);
+        delwin(dir_window);
+        dir_window = NULL;
+    }
+
+    // Show the scan progress window
+    show_scan_progress_screen();
+}
+
 // Handles directory selection navigation
 void navigate_directory_selection() {
     int ch;
@@ -132,21 +192,32 @@ void navigate_directory_selection() {
             char t[1024];
             if (!strlen(current_browsing_path)) strcpy(t, sel->name);
             else sprintf(t, "%s\\%s", current_browsing_path, sel->name);
-            if (show_confirmation_popup(t)) { strcpy(final_selected_path, t); break; }
-        } else if (ch == 10 && sel) {
+            if (show_confirmation_popup(t)) { 
+                strcpy(final_selected_path, t);
+                switch_to_progress_view(); // Switch to progress view
+                break;
+            }
+        } else if (ch == 10 && sel && dir_window != NULL) {
             update_path(strcmp(sel->name, "..") == 0 ? NULL : sel->name);
             populate_directory_list(current_browsing_path);
             selected_dir = scroll_offset = 0;
+            show_directory_selection_screen();
         } else if (ch == KEY_RESIZE) {
             handle_terminal_resize();
-            mvwin(dir_window, (LINES - 18) / 2, (COLS - 70) / 2);
+             mvwin(dir_window, (LINES - 18) / 2, (COLS - 70) / 2);
+             mvwin(progress_window, (LINES - 10) / 2, (COLS - 60) / 2);
         }
-        show_directory_selection_screen();
+        if(dir_window != NULL)
+        	show_directory_selection_screen();
     }
 }
 
 // Handles terminal resize
-void handle_terminal_resize() { resizeterm(LINES, COLS); clear(); refresh(); }
+void handle_terminal_resize() { 
+    resizeterm(LINES, COLS); 
+    clear(); 
+    refresh();
+}
 
 // --- UI Memory Management ---
 // Initializes the file list
