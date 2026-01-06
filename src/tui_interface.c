@@ -14,9 +14,13 @@ int init_tui() {
     refresh();
 
     // Create windows for the layout (example)
-    main_window = newwin(LINES - 2, COLS - 2, 1, 1);
+    main_window = newwin(15, 60, 1, 1); 
+    
     if (main_window != NULL) {
         box(main_window, 0, 0); // Draw a box around the window
+        
+        mvwprintw(main_window, 1, 2, " Deduplicator TUI Test ");
+        
         wrefresh(main_window);
     }
 

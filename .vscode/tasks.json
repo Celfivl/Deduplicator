@@ -9,14 +9,17 @@
                 "-fdiagnostics-color=always",
                 "-g",
                 "-I${workspaceFolder}\\include",
+                "-IC:\\msys64\\ucrt64\\include\\ncursesw", 
                 "${workspaceFolder}\\src\\filesystem.c",
                 "${workspaceFolder}\\src\\hashing.c",
                 "${workspaceFolder}\\src\\datastruct.c", 
                 "${workspaceFolder}\\src\\deduplicator.c",
+                "${workspaceFolder}\\src\\tui_interface.c",
                 "${file}", 
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lcrypto"
+                "-lcrypto",
+                "-lncursesw" 
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
