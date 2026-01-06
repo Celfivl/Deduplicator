@@ -5,8 +5,7 @@
 #include <ncurses.h>
 #include "filesystem.h"
 
-// --- UI-Specific Types (Not in filesystem.h) ---
-
+// --- UI-Specific Types ---
 typedef struct FileInfo {
     char name[256];
     int is_directory;
@@ -22,18 +21,22 @@ typedef struct {
 extern WINDOW *main_window; 
 extern WINDOW *dir_window;
 extern char final_selected_path[1024];
+extern char current_browsing_path[1024];
 
 // --- Core Lifecycle ---
 int init_tui();
 void end_tui();
 
-// --- Selection Logic ---
+// --- Selection & Navigation Logic ---
 void populate_directory_list(const char *path);
 void show_directory_selection_screen();
 void navigate_directory_selection();
+void handle_terminal_resize();
 
-// --- UI Memory Management ---
+// --- UI Memory & Helper Management ---
 void init_file_list(FileInfoList *list);
-void add_to_list(FileInfoList *fileList, const char *name);
+void add_to_list(FileInfoList *fileList, const char *name, int is_dir);
+void free_ui_list(FileInfoList *list);
+FileInfo* get_info_at_index(int index);
 
 #endif

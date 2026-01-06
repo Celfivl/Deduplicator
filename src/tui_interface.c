@@ -1,166 +1,176 @@
 // tui_interface.c
 #include <ncurses.h>
 #include "tui_interface.h"
-#include "filesystem.h"
+#include <assert.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 
-WINDOW *main_window = NULL; // Define the pointer
-WINDOW *dir_window = NULL;
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-void init_file_list(FileInfoList *list) {
-    list->head = NULL;
-    list->count = 0;
-}
-
-FileInfoList directory_list; // Declare a FileInfoList
-int selected_dir = 0;
-
-// Add a global variable to store the result
+// --- Global UI State ---
+WINDOW *main_window = NULL, *dir_window = NULL;
+FileInfoList directory_list;
+int selected_dir = 0, scroll_offset = 0;
 char final_selected_path[1024] = "";
 
-// Helper function to add a directory to the FileInfoList
-void add_to_list(FileInfoList *fileList, const char *name) {
-    FileInfo *new_file = (FileInfo *)malloc(sizeof(FileInfo));
-    if (new_file == NULL) {
-        perror("Memory allocation failed");
-        return;
-    }
-    strncpy(new_file->name, name, sizeof(new_file->name) - 1);
-    new_file->name[sizeof(new_file->name) - 1] = '\0';
-    new_file->is_directory = 1; // Assuming all entries are directories
-    new_file->next = fileList->head;
-    fileList->head = new_file;
-    fileList->count++;
-}
+#ifdef _WIN32
+char current_browsing_path[1024] = ""; 
+#else
+char current_browsing_path[1024] = "/";
+#endif
 
-// Helper function to free a FileEntry
-void free_file_entry(FileEntry *fileEntry) {
-    free(fileEntry);
-}
-
-void populate_directory_list(const char *path) {
-    init_file_list(&directory_list); // Initialize your TUI linked list
-    
-    int count = 0;
-    // Call the "Untouched" version of scan_directory from filesystem.c
-    FileEntry** results = scan_directory(path, &count); 
-
-    if (results != NULL) {
-        for (int i = 0; i < count; i++) {
-            // Transform the array results into your TUI's linked list
-            // Assuming add_to_list is a helper in your tui_interface or a shared header
-            add_to_list(&directory_list, results[i]->path); 
-            free_file_entry(results[i]); // Clean up the FileEntry as we migrate data
+// --- Helper Functions ---
+// Updates the current browsing path
+static void update_path(const char* addition) {
+    if (!addition) {
+        char *last = strrchr(current_browsing_path, '\\');
+        if (!last) last = strrchr(current_browsing_path, '/');
+        if (last) {
+            if (last == current_browsing_path + 2 && current_browsing_path[1] == ':') current_browsing_path[0] = '\0';
+            else *last = '\0';
+        } else current_browsing_path[0] = '\0';
+    } else {
+        if (strlen(current_browsing_path) == 0) strcpy(current_browsing_path, addition);
+        else {
+            size_t len = strlen(current_browsing_path);
+            if (current_browsing_path[len-1] != '\\' && current_browsing_path[len-1] != '/') strcat(current_browsing_path, "\\");
+            strcat(current_browsing_path, addition);
         }
-        free(results); // Free the array pointer itself
     }
 }
 
-void show_directory_selection_screen() {
-    int height = 15;
-    int width = 60;
-    int start_y = (LINES - height) / 2;
-    int start_x = (COLS - width) / 2;
-
-    // Delete the old window if it exists
-    if (dir_window != NULL) {
-        delwin(dir_window);
-    }
-
-    dir_window = newwin(height, width, start_y, start_x);
-    box(dir_window, 0, 0);
-
-    mvwprintw(dir_window, 1, 2, "Select Scan Directory:");
-
-    // Display the list of directories
-    FileInfo *current = directory_list.head;
-    int i = 0;
-    while (current != NULL && i < height - 4) { // added i < height - 4 condition
-        if (i == selected_dir) {
-            wattron(dir_window, A_REVERSE); // Highlight selected directory
-            mvwprintw(dir_window, i + 3, 2, current->name);
-            wattroff(dir_window, A_REVERSE);
-        } else {
-            mvwprintw(dir_window, i + 3, 2, current->name);
-        }
-        current = current->next;
-        i++;
-    }
-
-    wrefresh(dir_window);
-}
-
-void navigate_directory_selection() {
-    int ch;
-    while((ch = getch()) != 10) { // 10 is Enter
-        switch(ch) {
-            case KEY_UP:
-                if (selected_dir > 0) selected_dir--;
-                break;
-            case KEY_DOWN:
-                if (selected_dir < directory_list.count - 1) selected_dir++;
-                break;
-        }
-        show_directory_selection_screen(); 
-    }
-
-    // Capture the name of the selection before the list is freed in end_tui
-    FileInfo *current = directory_list.head;
-    for(int i = 0; i < selected_dir && current != NULL; i++) {
-        current = current->next;
-    }
-    if (current) {
-        strncpy(final_selected_path, current->name, 1023);
-    }
-}
-
+// --- Core Lifecycle ---
+// Initializes the TUI
 int init_tui() {
-    initscr(); // Initialize ncurses
-    cbreak();  // Disable line buffering
-    noecho();  // Don't echo user input
-    keypad(stdscr, TRUE); // Enable special keys
-
-    // Initialize the physical screen
-    refresh();
-
-    // Create windows for the layout (example)
-    main_window = newwin(15, 60, 1, 1); 
-    
-    if (main_window != NULL) {
-        box(main_window, 0, 0); // Draw a box around the window
-        
-        mvwprintw(main_window, 1, 2, " Deduplicator TUI Test ");
-        
-        wrefresh(main_window);
-    }
-
-    populate_directory_list("."); // Populate the directory list
+    initscr();
+    if (!stdscr) return 1;
+    noecho(); cbreak(); curs_set(0); keypad(stdscr, TRUE);
+    init_file_list(&directory_list);
+    populate_directory_list(current_browsing_path);
+    dir_window = newwin(18, 70, (LINES - 18) / 2, (COLS - 70) / 2);
     show_directory_selection_screen();
-    navigate_directory_selection();
-
     return 0;
 }
 
+// Ends the TUI
 void end_tui() {
-    // Free each FileInfo in the list
-    FileInfo *current = directory_list.head;
-    while (current != NULL) {
-        FileInfo *next = current->next;
-        free(current);
-        current = next;
-    }
+    free_ui_list(&directory_list);
+    if (dir_window) delwin(dir_window);
+    endwin();
+}
 
-    // Reset the list
-    directory_list.head = NULL;
-    directory_list.count = 0;
+// --- Selection Logic ---
+// Populates the directory list
+void populate_directory_list(const char *path) {
+    free_ui_list(&directory_list);
+#ifdef _WIN32
+    if (strlen(path) == 0) {
+        char drives[256], *d = drives;
+        GetLogicalDriveStringsA(sizeof(drives), drives);
+        while (*d) { add_to_list(&directory_list, d, 1); d += strlen(d) + 1; }
+        return;
+    }
+    add_to_list(&directory_list, "..", 1);
+    char s[1024]; sprintf(s, "%s\\*", path);
+    WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(s, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.cFileName[0] == '.' && (fd.cFileName[1] == '\0' || fd.cFileName[1] == '.')) continue;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) add_to_list(&directory_list, fd.cFileName, 1);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+#endif
+}
+
+// Shows a confirmation popup
+int show_confirmation_popup(const char *path) {
+    WINDOW *p = newwin(7, 60, (LINES - 7) / 2, (COLS - 60) / 2);
+    box(p, 0, 0);
+    mvwprintw(p, 1, 2, "Confirm Selection:");
+    mvwprintw(p, 3, 2, "Path: %-54.54s", path);
+    mvwprintw(p, 5, 15, "[Y] Confirm / [N] Cancel");
+    wrefresh(p);
+    int c = wgetch(p);
+    delwin(p);
+    return (c == 'y' || c == 'Y');
+}
+
+// Shows the directory selection screen
+void show_directory_selection_screen() {
+    int h, w; getmaxyx(dir_window, h, w);
+    int max = h - 4;
+    if (selected_dir < scroll_offset) scroll_offset = selected_dir;
+    else if (selected_dir >= scroll_offset + max) scroll_offset = selected_dir - max + 1;
+
+    werase(dir_window);
+    box(dir_window, 0, 0);
+    mvwprintw(dir_window, 0, 2, " Path: %s ", strlen(current_browsing_path) ? current_browsing_path : "System");
     
-    if (dir_window != NULL) {
-        delwin(dir_window);
+    FileInfo *curr = directory_list.head;
+    for (int i = 0; i < scroll_offset && curr; i++) curr = curr->next;
+    for (int i = 0; i < max && curr; i++) {
+        if (scroll_offset + i == selected_dir) wattron(dir_window, A_REVERSE);
+        mvwprintw(dir_window, i + 2, 2, " [DIR] %-60.60s ", curr->name);
+        wattroff(dir_window, A_REVERSE);
+        curr = curr->next;
     }
-    if (main_window != NULL) {
-        delwin(main_window); // Properly delete the window
+    wnoutrefresh(stdscr); wnoutrefresh(dir_window); doupdate();
+}
+
+// Handles directory selection navigation
+void navigate_directory_selection() {
+    int ch;
+    while ((ch = getch()) != 27) {
+        FileInfo *sel = get_info_at_index(selected_dir);
+        if (ch == KEY_UP && selected_dir > 0) selected_dir--;
+        else if (ch == KEY_DOWN && selected_dir < directory_list.count - 1) selected_dir++;
+        else if (ch == 32 && sel && strcmp(sel->name, "..") != 0) {
+            char t[1024];
+            if (!strlen(current_browsing_path)) strcpy(t, sel->name);
+            else sprintf(t, "%s\\%s", current_browsing_path, sel->name);
+            if (show_confirmation_popup(t)) { strcpy(final_selected_path, t); break; }
+        } else if (ch == 10 && sel) {
+            update_path(strcmp(sel->name, "..") == 0 ? NULL : sel->name);
+            populate_directory_list(current_browsing_path);
+            selected_dir = scroll_offset = 0;
+        } else if (ch == KEY_RESIZE) {
+            handle_terminal_resize();
+            mvwin(dir_window, (LINES - 18) / 2, (COLS - 70) / 2);
+        }
+        show_directory_selection_screen();
     }
-    endwin(); // End ncurses
+}
+
+// Handles terminal resize
+void handle_terminal_resize() { resizeterm(LINES, COLS); clear(); refresh(); }
+
+// --- UI Memory Management ---
+// Initializes the file list
+void init_file_list(FileInfoList *l) { l->head = NULL; l->count = 0; }
+
+// Adds a file to the list
+void add_to_list(FileInfoList *l, const char *n, int d) {
+    FileInfo *node = malloc(sizeof(FileInfo));
+    strncpy(node->name, n, 255); node->is_directory = d; node->next = NULL;
+    if (!l->head) l->head = node;
+    else { FileInfo *tmp = l->head; while (tmp->next) tmp = tmp->next; tmp->next = node; }
+    l->count++;
+}
+
+// Frees the UI list
+void free_ui_list(FileInfoList *l) {
+    FileInfo *c = l->head;
+    while (c) { FileInfo *n = c->next; free(c); c = n; }
+    l->head = NULL; l->count = 0;
+}
+
+// Gets the file info at a given index
+FileInfo* get_info_at_index(int i) {
+    FileInfo *c = directory_list.head;
+    while (i-- > 0 && c) c = c->next;
+    return c;
 }
