@@ -36,7 +36,7 @@ void handle_terminal_resize();
 
 // --- Scan Progress Logic ---
 void show_scan_progress_screen(); // Added show_scan_progress_screen
-void update_scan_progress(const char *file_name, int percentage, const char *message); // Added update_scan_progress
+void update_scan_progress(const char *current_process, int percentage, int files_found); // Added update_scan_progress
 void switch_to_progress_view(); // Added switch_to_progress_view
 
 // --- UI Memory & Helper Management ---

@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // Function to simulate keyboard input
 void simulate_input(int key, int num_times) {
     for (int i = 0; i < num_times; i++) {
@@ -54,10 +58,34 @@ int test_window_initialization() {
 int main() {
     init_tui();
 
-    mvprintw(0, 0, "MANUAL MODE ACTIVE: If screen is blank, press any key.");
+    mvprintw(0, 0, "MANUAL MODE: Select a directory to trigger Progress Test.");
     refresh();
 
-    navigate_directory_selection();
+    // 1. Manual Navigation Test
+    navigate_directory_selection(); 
+
+    // 2. Automated 15B Dynamic Update Test
+    // Once selection is confirmed, switch_to_progress_view() has already been called
+    const char *test_stages[] = {
+        "Traversing subdirectories",
+        "Collecting file meta-data",
+        "Hashing matched files",
+        "Finalizing results"
+    };
+
+    for (int i = 0; i < 4; i++) {
+        // Simulate a smooth progress bar fill for each stage
+        for (int p = 0; p <= 100; p += 10) {
+            update_scan_progress(test_stages[i], p, (i + 1) * 125);
+            #ifdef _WIN32
+            Sleep(50); 
+            #endif
+        }
+    }
+
+    mvprintw(LINES - 1, 2, "15B Test Complete. Press any key to exit.");
+    refresh();
+    getch();
 
     end_tui();
 
