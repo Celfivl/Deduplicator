@@ -11,7 +11,7 @@
 #endif
 
 // --- Global UI State ---
-WINDOW *main_window = NULL, *dir_window = NULL, *progress_window = NULL; // Added progress_window
+WINDOW *main_window = NULL, *dir_window = NULL, *progress_window = NULL, *results_window = NULL; // Added results_window
 FileInfoList directory_list;
 int selected_dir = 0, scroll_offset = 0;
 char final_selected_path[1024] = "";
@@ -57,6 +57,10 @@ int init_tui() {
 
     int progress_height = 10, progress_width = 60;
     progress_window = newwin(progress_height, progress_width, (LINES - progress_height) / 2, (COLS - progress_width) / 2); // Create progress window
+
+     int results_height = 20, results_width = 80;
+    results_window = newwin(results_height, results_width, (LINES - results_height) / 2, (COLS - results_width) / 2);
+
     
     if(progress_window == NULL)
     	show_directory_selection_screen();
@@ -69,6 +73,7 @@ void end_tui() {
     free_ui_list(&directory_list);
     if (dir_window) delwin(dir_window);
     if (progress_window) delwin(progress_window); // Delete progress window
+    if (results_window) delwin(results_window);
     endwin();
 }
 
@@ -110,7 +115,7 @@ int show_confirmation_popup(const char *path) {
 }
 
 // Shows the directory selection screen
-void show_directory_selection_screen() {
+    void show_directory_selection_screen() {
     int h, w; getmaxyx(dir_window, h, w);
     int max = h - 4;
     if (selected_dir < scroll_offset) scroll_offset = selected_dir;
@@ -164,6 +169,21 @@ void update_scan_progress(const char *current_process, int percentage, int files
     mvwprintw(progress_window, 7, 2, "Items: %-10d", files_found);
 
     wrefresh(progress_window);
+
+    // Switch to results screen when scan is complete
+    if (percentage == 100 && strcmp(current_process, "Finalizing results") == 0) {
+        switch_to_results_view();
+    }
+}
+
+//Shows the duplicate file results screen
+void show_results_screen() {
+     werase(results_window);
+    box(results_window, 0, 0);
+    mvwprintw(results_window, 1, 2, "Duplicate File Sets:");
+    mvwprintw(results_window, 3, 2, "Results will be here ");
+
+    wrefresh(results_window);
 }
 
 //Switches to the scan progress view
@@ -179,6 +199,21 @@ void switch_to_progress_view() {
 
     // Show the scan progress window
     show_scan_progress_screen();
+}
+
+// Switches to the results view
+void switch_to_results_view() {
+    // Hide the progress window
+    if (progress_window != NULL) {
+        wbkgd(progress_window, COLOR_PAIR(0));
+        wclear(progress_window);
+        wrefresh(progress_window);
+        delwin(progress_window);
+        progress_window = NULL;
+    }
+
+    // Show the results window
+    show_results_screen();
 }
 
 // Handles directory selection navigation

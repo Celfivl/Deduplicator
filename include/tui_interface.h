@@ -21,6 +21,7 @@ typedef struct {
 extern WINDOW *main_window; 
 extern WINDOW *dir_window;
 extern WINDOW *progress_window; // Added progress_window
+extern WINDOW *results_window; // Added results_window
 extern char final_selected_path[1024];
 extern char current_browsing_path[1024];
 
@@ -38,6 +39,7 @@ void handle_terminal_resize();
 void show_scan_progress_screen(); // Added show_scan_progress_screen
 void update_scan_progress(const char *current_process, int percentage, int files_found); // Added update_scan_progress
 void switch_to_progress_view(); // Added switch_to_progress_view
+void switch_to_results_view(); // Added switch_to_results_view
 
 // --- UI Memory & Helper Management ---
 void init_file_list(FileInfoList *list);
