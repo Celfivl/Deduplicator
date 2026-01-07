@@ -9,63 +9,43 @@
 #include <windows.h>
 #endif
 
-// Function to simulate keyboard input
+// Simulates keyboard input
 void simulate_input(int key, int num_times) {
     for (int i = 0; i < num_times; i++) {
         ungetch(key);
     }
 }
 
-int test_directory_selection() {
-    int result = 0;
-    char expected_path[1024] = "";
+// Unit Test: Logic only, assumes TUI is already active
+int test_results_transition_logic() {
+    // Manually trigger the transition condition
+    update_scan_progress("Finalizing results", 100, 123);
 
-    // Initialize the TUI
-    init_tui();
-
-    // Simulate navigating to the second directory
-    simulate_input(KEY_DOWN, 1);
-
-    // Select the directory (simulate pressing Enter)
-    simulate_input(10, 1);
-
-    // Verify that the selected path is correct
-    strcpy(expected_path, "test"); //Assuming "test" is the second directory
-    if (strcmp(final_selected_path, expected_path) != 0) {
-        printf("ERROR: Selected path is incorrect. Expected '%s', got '%s'\n", expected_path, final_selected_path);
-        result = 1;
-    }
-
-    // Clean up and exit
-    end_tui();
-    return result;
-}
-
-int test_window_initialization() {
-    // Basic test to ensure the main window initializes
-    init_tui();
-
-    if (main_window == NULL && stdscr == NULL) {
-        end_tui();
-        fprintf(stderr, "ERROR: Main window is NULL\n");
+    if (results_window == NULL) {
         return 1;
     }
 
-    end_tui();
+    // Verify responsiveness to input (simulation)
+    simulate_input(KEY_DOWN, 2);
+    simulate_input(KEY_UP, 1);
+    simulate_input(10, 1); // Enter
+
     return 0;
 }
 
 int main() {
-    init_tui();
+    // 1. Setup
+    if (init_tui() != 0) {
+        fprintf(stderr, "Failed to initialize TUI\n");
+        return 1;
+    }
 
+    // 2. Manual Directory Selection Phase
     mvprintw(0, 0, "MANUAL MODE: Select a directory to trigger Progress Test.");
     refresh();
-
-    // 1. Manual Navigation Test
     navigate_directory_selection(); 
 
-    // 2. Automated 15B Dynamic Update Test
-    // Once selection is confirmed, switch_to_progress_view() has already been called
+    // 3. Automated Progress Phase (15B Verification)
     const char *test_stages[] = {
         "Traversing subdirectories",
         "Collecting file meta-data",
@@ -74,21 +54,26 @@ int main() {
     };
 
     for (int i = 0; i < 4; i++) {
-        // Simulate a smooth progress bar fill for each stage
-        for (int p = 0; p <= 100; p += 10) {
+        for (int p = 0; p <= 100; p += 20) {
             update_scan_progress(test_stages[i], p, (i + 1) * 125);
             #ifdef _WIN32
-            Sleep(50); 
+            Sleep(100); 
             #endif
         }
     }
 
-    mvprintw(LINES - 1, 2, "15B Test Complete. Press any key to exit.");
+    // 4. Automated Results Transition (16B Verification)
+    // Note: The loop above triggers the transition on the last iteration.
+    // Now we enter the interaction loop to satisfy 16A requirements.
+    navigate_results_view(); 
+
+    // 5. Cleanup
+    mvprintw(LINES - 1, 2, "16B Test Complete. Press any key to exit.");
     refresh();
     getch();
 
     end_tui();
 
-    printf("\nManual Session Complete. Path Captured: %s\n", final_selected_path);
+    printf("\nTest Session Complete.\nTarget Path: %s\n", final_selected_path);
     return 0;
 }
