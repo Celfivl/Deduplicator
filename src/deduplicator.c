@@ -39,6 +39,18 @@ int compare_files(const char *file1, const char *file2) {
     return 1;
 }
 
+// New: Actual filesystem deletion based on user marks
+void execute_deletion(MarkedFile *results, int *marks, int total) {
+    if (!results || !marks) return;
+
+    for (int i = 0; i < total; i++) {
+        // Only delete if the user manually toggled the mark (1)
+        if (marks[i] == 1) {
+            remove(results[i].path);
+        }
+    }
+}
+
 MarkedFile *find_duplicates(const char *path, int *total_out, ProgressCallback cb) {
     int num_files = 0;
     if (cb) cb("Scanning directory...", 5, 0);
@@ -106,6 +118,8 @@ MarkedFile *find_duplicates(const char *path, int *total_out, ProgressCallback c
 }
 
 void free_results(MarkedFile *results, int count) {
-    for (int i = 0; i < count; i++) free(results[i].path);
+    for (int i = 0; i < count; i++) {
+        if (results[i].path) free(results[i].path);
+    }
     free(results);
 }

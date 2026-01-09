@@ -142,31 +142,48 @@ void update_scan_progress(const char *current_process, int percentage, int files
 }
 
 void show_results_screen(MarkedFile *results, int total, int cursor, int *marks) {
-    if (!results_window || !results) return;
-    int h, w; getmaxyx(results_window, h, w);
+    if (!results_window) return;
+
+    int h, w;
+    getmaxyx(results_window, h, w);
+
     werase(results_window);
     box(results_window, 0, 0);
-    mvwprintw(results_window, 1, 2, " Review Matches (Sorted by Group) ");
+    
+    // Header 
+    mvwprintw(results_window, 0, 2, " Duplicate Discovery Results ");
+    mvwprintw(results_window, 1, 2, " [Space] Mark for Delete | [D] Confirm | [Q] Exit ");
 
-    int last_group = -1, line = 3;
-    for (int i = 0; i < total && line < h - 3; i++) {
-        if (results[i].group_id == 0) continue; 
-        if (results[i].group_id != last_group) {
-            wattron(results_window, A_BOLD);
-            mvwprintw(results_window, line++, 2, "Group [%d]", results[i].group_id);
-            wattroff(results_window, A_BOLD);
-            last_group = results[i].group_id;
+    int current_y = 2; // Starting content row
+
+    for (int i = 0; i < total; i++) {
+        // --- Neutral Group Header ---
+        if (i == 0 || results[i].group_id != results[i-1].group_id) {
+            current_y++; // Add a gap before new group
+            wattron(results_window, A_BOLD | COLOR_PAIR(2));
+            mvwprintw(results_window, current_y++, 2, "[ Group %d - Matching Content ]", results[i].group_id);
+            wattroff(results_window, A_BOLD | COLOR_PAIR(2));
         }
-        if (i == cursor) wattron(results_window, A_REVERSE);
-        if (results[i].is_duplicate) {
-            mvwprintw(results_window, line++, 4, " %s [DUP] %-50.50s ", marks[i] ? "[X]" : "[ ]", results[i].path);
-        } else {
-            mvwprintw(results_window, line++, 4, " [KEEP] %-50.50s ", results[i].path);
+
+        if (i == cursor) {
+            wattron(results_window, A_REVERSE);
         }
-        wattroff(results_window, A_REVERSE);
+
+        const char *status = marks[i] ? "[X] DELETE" : "[ ]       ";
+        
+        mvwprintw(results_window, current_y++, 2, "  %s %s", status, results[i].path);
+
+        if (i == cursor) {
+            wattroff(results_window, A_REVERSE);
+        }
+
+        if (current_y >= h - 2) break;
     }
-    mvwprintw(results_window, h-2, 2, " [SPACE] Toggle  [D] Delete  [B] Back  [Q] Exit ");
-    wrefresh(results_window);
+
+    mvwprintw(results_window, h - 2, 2, " [SPACE] Toggle  [D] Process  [Q] Back ");
+
+    wnoutrefresh(results_window);
+    doupdate();
 }
 
 void navigate_directory_selection() {
