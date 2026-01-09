@@ -4,6 +4,7 @@
 
 #include <ncurses.h>
 #include "filesystem.h"
+#include "deduplicator.h"
 
 // --- UI-Specific Types ---
 typedef struct FileInfo {
@@ -32,18 +33,11 @@ void end_tui();
 // --- Selection & Navigation Logic ---
 void populate_directory_list(const char *path);
 void show_directory_selection_screen();
-void navigate_directory_selection();
-void handle_terminal_resize(); // Ensure this is present
+void navigate_directory_selection(); // Input loop for browser
 
-// --- Scan Progress Logic ---
-void show_scan_progress_screen();
+// --- Scan Progress & Results Rendering ---
 void update_scan_progress(const char *current_process, int percentage, int files_found);
-void switch_to_progress_view();
-void switch_to_results_view();
-
-// --- Results View Logic ---
-void show_results_screen(int cursor, int *marks);    // Added
-void navigate_results_view();   // Added
+void show_results_screen(MarkedFile *results, int total, int cursor, int *marks);
 
 // --- UI Memory & Helper Management ---
 int show_confirmation_popup(const char *msg);

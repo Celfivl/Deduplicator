@@ -1,6 +1,7 @@
 // tui_interface.c
 #include <ncurses.h>
 #include "tui_interface.h"
+#include "deduplicator.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +11,6 @@
 #include <windows.h>
 #endif
 
-// --- Global UI State ---
 WINDOW *main_window = NULL, *dir_window = NULL, *progress_window = NULL, *results_window = NULL; 
 FileInfoList directory_list;
 int selected_dir = 0, scroll_offset = 0;
@@ -22,7 +22,6 @@ char current_browsing_path[1024] = "";
 char current_browsing_path[1024] = "/";
 #endif
 
-// --- Helper Functions ---
 static void update_path(const char* addition) {
     if (!addition) {
         char *last = strrchr(current_browsing_path, '\\');
@@ -41,7 +40,6 @@ static void update_path(const char* addition) {
     }
 }
 
-// --- Core Lifecycle ---
 int init_tui() {
     initscr();
     if (!stdscr) return 1;
@@ -49,20 +47,14 @@ int init_tui() {
     init_file_list(&directory_list);
     populate_directory_list(current_browsing_path);
 
-    // Static 95% calculation at launch
-    int h_95 = (LINES * 95) / 100;
-    int w_95 = (COLS * 95) / 100;
-    int start_y = (LINES - h_95) / 2;
-    int start_x = (COLS - w_95) / 2;
+    int h_95 = (LINES * 95) / 100, w_95 = (COLS * 95) / 100;
+    int start_y = (LINES - h_95) / 2, start_x = (COLS - w_95) / 2;
 
     dir_window = newwin(h_95, w_95, start_y, start_x);
-
-    int progress_height = 10, progress_width = 60;
-    progress_window = newwin(progress_height, progress_width, (LINES - progress_height) / 2, (COLS - progress_width) / 2); 
-
     results_window = newwin(h_95, w_95, start_y, start_x);
 
-    show_directory_selection_screen();
+    int ph = 10, pw = 60;
+    progress_window = newwin(ph, pw, (LINES - ph) / 2, (COLS - pw) / 2); 
 
     return 0;
 }
@@ -75,7 +67,6 @@ void end_tui() {
     endwin();
 }
 
-// --- Selection Logic ---
 void populate_directory_list(const char *path) {
     free_ui_list(&directory_list);
 #ifdef _WIN32
@@ -98,11 +89,10 @@ void populate_directory_list(const char *path) {
 #endif
 }
 
-int show_confirmation_popup(const char *path) {
+int show_confirmation_popup(const char *msg) {
     WINDOW *p = newwin(7, 60, (LINES - 7) / 2, (COLS - 60) / 2);
     box(p, 0, 0);
-    mvwprintw(p, 1, 2, "Confirm Selection:");
-    mvwprintw(p, 3, 2, "Path: %-54.54s", path);
+    mvwprintw(p, 2, 2, "%-56.56s", msg);
     mvwprintw(p, 5, 15, "[Y] Confirm / [N] Cancel");
     wrefresh(p);
     int c = wgetch(p);
@@ -128,16 +118,8 @@ void show_directory_selection_screen() {
         wattroff(dir_window, A_REVERSE);
         curr = curr->next;
     }
-    wnoutrefresh(stdscr); wnoutrefresh(dir_window); doupdate();
-}
-
-void show_scan_progress_screen() {
-    werase(progress_window);
-    box(progress_window, 0, 0);
-    mvwprintw(progress_window, 1, 2, "Scan Progress:");
-    mvwprintw(progress_window, 3, 2, "Progress: [----------] 0%%");
-    mvwprintw(progress_window, 5, 2, "Scanning: ");
-    wrefresh(progress_window);
+    mvwprintw(dir_window, h-2, 2, " [ENTER] Open  [SPACE] Select  [Q] Exit ");
+    wrefresh(dir_window);
 }
 
 void update_scan_progress(const char *current_process, int percentage, int files_found) {
@@ -146,8 +128,7 @@ void update_scan_progress(const char *current_process, int percentage, int files
     box(progress_window, 0, 0);
     mvwprintw(progress_window, 1, 2, "Deduplicator Engine: Active");
 
-    int bar_width = 30;
-    int filled = (percentage * bar_width) / 100;
+    int bar_width = 30, filled = (percentage * bar_width) / 100;
     mvwprintw(progress_window, 3, 2, "Progress: [");
     wattron(progress_window, A_REVERSE);
     for (int i = 0; i < filled; i++) waddch(progress_window, ' ');
@@ -158,110 +139,61 @@ void update_scan_progress(const char *current_process, int percentage, int files
     mvwprintw(progress_window, 5, 2, "Step:  %-40s", current_process);
     mvwprintw(progress_window, 7, 2, "Items: %-10d", files_found);
     wrefresh(progress_window);
-
-    if (percentage == 100 && strcmp(current_process, "Finalizing results") == 0) {
-        switch_to_results_view();
-    }
 }
 
-void show_results_screen(int cursor, int *marks) {
-    if (!results_window) return;
+void show_results_screen(MarkedFile *results, int total, int cursor, int *marks) {
+    if (!results_window || !results) return;
+    int h, w; getmaxyx(results_window, h, w);
     werase(results_window);
     box(results_window, 0, 0);
-    mvwprintw(results_window, 1, 2, "Deduplicator Results: Review Matches");
-    
-    for (int i = 0; i < 5; i++) {
+    mvwprintw(results_window, 1, 2, " Review Matches (Sorted by Group) ");
+
+    int last_group = -1, line = 3;
+    for (int i = 0; i < total && line < h - 3; i++) {
+        if (results[i].group_id == 0) continue; 
+        if (results[i].group_id != last_group) {
+            wattron(results_window, A_BOLD);
+            mvwprintw(results_window, line++, 2, "Group [%d]", results[i].group_id);
+            wattroff(results_window, A_BOLD);
+            last_group = results[i].group_id;
+        }
         if (i == cursor) wattron(results_window, A_REVERSE);
-        mvwprintw(results_window, 4 + i, 4, "%s [MATCH] file_path_%d.zip", marks[i] ? "[X]" : "[ ]", i);
+        if (results[i].is_duplicate) {
+            mvwprintw(results_window, line++, 4, " %s [DUP] %-50.50s ", marks[i] ? "[X]" : "[ ]", results[i].path);
+        } else {
+            mvwprintw(results_window, line++, 4, " [KEEP] %-50.50s ", results[i].path);
+        }
         wattroff(results_window, A_REVERSE);
     }
-    
-    mvwprintw(results_window, 18, 2, " [SPACE] Toggle  [D] Delete Selected  [ESC] Exit");
+    mvwprintw(results_window, h-2, 2, " [SPACE] Toggle  [D] Delete  [B] Back  [Q] Exit ");
     wrefresh(results_window);
-}
-
-void navigate_results_view() {
-    int ch;
-    int result_cursor = 0;
-    int delete_marks[5] = {0, 0, 0, 0, 0}; 
-    
-    keypad(results_window, TRUE);
-    show_results_screen(result_cursor, delete_marks);
-
-    while ((ch = wgetch(results_window)) != 27) { 
-        if (ch == KEY_UP && result_cursor > 0) result_cursor--;
-        else if (ch == KEY_DOWN && result_cursor < 4) result_cursor++;
-        else if (ch == ' ' || ch == 10) { 
-            delete_marks[result_cursor] = !delete_marks[result_cursor];
-        } 
-        else if (ch == 'd' || ch == 'D') {
-            if (show_confirmation_popup("SELECTED DUPLICATES")) {
-                break;
-            }
-        }
-        show_results_screen(result_cursor, delete_marks);
-    }
-}
-
-void switch_to_progress_view() {
-    if(dir_window != NULL){
-        wbkgd(dir_window, COLOR_PAIR(0)); 
-        wclear(dir_window);
-        wrefresh(dir_window);
-        delwin(dir_window);
-        dir_window = NULL;
-    }
-    show_scan_progress_screen();
-}
-
-void switch_to_results_view() {
-    if (progress_window != NULL) {
-        wbkgd(progress_window, COLOR_PAIR(0));
-        wclear(progress_window);
-        wrefresh(progress_window);
-        delwin(progress_window);
-        progress_window = NULL;
-    }
-    int initial_cursor = 0;
-    int initial_marks[5] = {0, 0, 0, 0, 0};
-    show_results_screen(initial_cursor, initial_marks);
 }
 
 void navigate_directory_selection() {
     int ch;
-    while ((ch = getch()) != 27) {
+    while (1) {
+        show_directory_selection_screen();
+        ch = getch();
         FileInfo *sel = get_info_at_index(selected_dir);
+
+        if (ch == 'q' || ch == 'Q' || ch == 27) {
+            final_selected_path[0] = '\0';
+            break;
+        }
         if (ch == KEY_UP && selected_dir > 0) selected_dir--;
         else if (ch == KEY_DOWN && selected_dir < directory_list.count - 1) selected_dir++;
-        else if (ch == 32 && sel && strcmp(sel->name, "..") != 0) {
-            char t[1024];
-            if (!strlen(current_browsing_path)) strcpy(t, sel->name);
-            else sprintf(t, "%s\\%s", current_browsing_path, sel->name);
-            if (show_confirmation_popup(t)) { 
-                strcpy(final_selected_path, t);
-                switch_to_progress_view(); 
-                break;
-            }
-        } else if (ch == 10 && sel && dir_window != NULL) {
+        else if (ch == ' ' && sel && strcmp(sel->name, "..") != 0) {
+            if (!strlen(current_browsing_path)) strcpy(final_selected_path, sel->name);
+            else sprintf(final_selected_path, "%s\\%s", current_browsing_path, sel->name);
+            break;
+        } else if (ch == 10 && sel) {
             update_path(strcmp(sel->name, "..") == 0 ? NULL : sel->name);
             populate_directory_list(current_browsing_path);
             selected_dir = scroll_offset = 0;
-            show_directory_selection_screen();
-        } else if (ch == KEY_RESIZE) {
-            handle_terminal_resize();
         }
-        if(dir_window != NULL)
-            show_directory_selection_screen();
     }
 }
 
-void handle_terminal_resize() { 
-    resizeterm(LINES, COLS); 
-    clear(); 
-    refresh();
-}
-
-// --- UI Memory Management ---
 void init_file_list(FileInfoList *l) { l->head = NULL; l->count = 0; }
 
 void add_to_list(FileInfoList *l, const char *n, int d) {

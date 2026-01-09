@@ -1,214 +1,111 @@
 // deduplicator.c
 #include "deduplicator.h"
-#include "filesystem.h"
 #include "hashing.h"
 #include "datastruct.h"
-#include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
-#define INITIAL_GROUP_CAPACITY 4
-
-static SizeGroup *find_group(SizeGroup *head, off_t size) {
-    for (SizeGroup *cur = head; cur != NULL; cur = cur->next) {
-        if (cur->size == size) return cur;
-    }
-    return NULL;
-}
-
+// Allocates a new metadata bucket for files of a specific size 
 static SizeGroup *add_group(SizeGroup **head, off_t size) {
-    SizeGroup *g = (SizeGroup *)malloc(sizeof(SizeGroup));
-    if (!g) {
-        perror("malloc SizeGroup");
-        exit(EXIT_FAILURE);
-    }
+    SizeGroup *g = malloc(sizeof(SizeGroup));
+    if (!g) return NULL;
+
     g->size = size;
-    g->filepaths = (char **)malloc(INITIAL_GROUP_CAPACITY * sizeof(char *));
-    if (!g->filepaths) {
-        perror("malloc filepaths");
-        exit(EXIT_FAILURE);
-    }
     g->count = 0;
-    g->capacity = INITIAL_GROUP_CAPACITY;
+    g->capacity = 4;
+    g->filepaths = malloc(g->capacity * sizeof(char *));
     g->next = *head;
     *head = g;
     return g;
 }
 
-SizeGroup *group_files_by_size(FileEntry **files, int num_files) {
-    SizeGroup *head = NULL;
-    if (!files || num_files <= 0) return NULL;
-
-    for (int i = 0; i < num_files; i++) {
-        FileEntry *f = files[i];
-        if (!f) continue;
-
-        SizeGroup *g = find_group(head, f->size);
-        if (!g) {
-            g = add_group(&head, f->size);
-        }
-
-        if (g->count == g->capacity) {
-            g->capacity *= 2;
-            char **new_paths = (char **)realloc(g->filepaths,
-                                                g->capacity * sizeof(char *));
-            if (!new_paths) {
-                perror("realloc filepaths");
-                exit(EXIT_FAILURE);
-            }
-            g->filepaths = new_paths;
-        }
-
-        g->filepaths[g->count] = strdup(f->path);
-        if (!g->filepaths[g->count]) {
-            perror("strdup path");
-            exit(EXIT_FAILURE);
-        }
-        g->count++;
-    }
-
-    return head;
-}
-
+// Performs a bit-for-bit check to ensure hash matches aren't collisions 
 int compare_files(const char *file1, const char *file2) {
-    FILE *fp1 = fopen(file1, "rb");
-    if (!fp1) {
-        perror("fopen file1");
+    FILE *f1 = fopen(file1, "rb"), *f2 = fopen(file2, "rb");
+    if (!f1 || !f2) {
+        if (f1) fclose(f1); if (f2) fclose(f2);
         return 0;
     }
 
-    FILE *fp2 = fopen(file2, "rb");
-    if (!fp2) {
-        perror("fopen file2");
-        fclose(fp1);
-        return 0;
-    }
-
-    int ch1, ch2;
-    while ((ch1 = fgetc(fp1)) != EOF && (ch2 = fgetc(fp2)) != EOF) {
-        if (ch1 != ch2) {
-            fclose(fp1);
-            fclose(fp2);
-            return 0;
+    int c1, c2;
+    do {
+        c1 = fgetc(f1); c2 = fgetc(f2);
+        if (c1 != c2) { 
+            fclose(f1); fclose(f2); 
+            return 0; 
         }
-    }
+    } while (c1 != EOF);
 
-    int result = (fgetc(fp1) == EOF && fgetc(fp2) == EOF);
-    fclose(fp1);
-    fclose(fp2);
-    return result;
+    fclose(f1); fclose(f2);
+    return 1;
 }
 
-DuplicatePair *find_duplicates(const char *directory_path) {
+MarkedFile *find_duplicates(const char *path, int *total_out, ProgressCallback cb) {
     int num_files = 0;
-    FileEntry **files = scan_directory(directory_path, &num_files);
+    if (cb) cb("Scanning directory...", 5, 0);
+    FileEntry **files = scan_directory(path, &num_files);
     if (!files) return NULL;
 
-    SizeGroup *groups = group_files_by_size(files, num_files);
-
+    // Sort files into buckets by size to narrow search space 
+    SizeGroup *groups = NULL;
     for (int i = 0; i < num_files; i++) {
+        SizeGroup *g = groups;
+        while (g && g->size != files[i]->size) g = g->next;
+        if (!g) g = add_group(&groups, files[i]->size);
+        
+        if (g->count == g->capacity) {
+            g->capacity *= 2;
+            g->filepaths = realloc(g->filepaths, g->capacity * sizeof(char *));
+        }
+        g->filepaths[g->count++] = strdup(files[i]->path);
         free_file_entry(files[i]);
     }
     free(files);
 
-    HashTable *hash_table = create_hash_table();
-    if (hash_table == NULL) {
-        while (groups != NULL) {
-            SizeGroup *next = groups->next;
-            for (size_t i = 0; i < groups->count; i++) free(groups->filepaths[i]);
-            free(groups->filepaths);
-            free(groups);
-            groups = next;
-        }
-        return NULL;
-    }
+    MarkedFile *results = malloc(num_files * sizeof(MarkedFile));
+    HashTable *ht = create_hash_table();
+    int processed = 0, current_id = 1;
 
-    DuplicatePair *duplicate_list = NULL;
-    SizeGroup *current_group = groups;
-    while (current_group != NULL) {
-        if (current_group->count > 1) {
-            for (size_t i = 0; i < current_group->count; i++) {
-                char *filepath = current_group->filepaths[i];
-                
+    // Analyze groups: files with unique sizes are skipped automatically 
+    for (SizeGroup *g = groups; g; g = g->next) {
+        for (size_t i = 0; i < g->count; i++) {
+            results[processed].path = g->filepaths[i];
+            
+            if (g->count < 2) {
+                results[processed].group_id = 0;
+                results[processed].is_duplicate = 0;
+            } else {
                 HashContext *ctx = init_hash();
-                if (!ctx) continue;
+                hash_file(g->filepaths[i], ctx);
+                char *hex = finalize_hash(ctx);
+                FilePathNode *node = lookup_hash(ht, hex);
 
-                if (hash_file(filepath, ctx) != 0) {
-                    free_hash_context(ctx);
-                    continue; 
-                }
-
-                // finalize_hash now returns the hex string directly
-                char *hash_hex = finalize_hash(ctx);
-                if (!hash_hex) {
-                    free_hash_context(ctx);
-                    continue;
-                }
-
-                FilePathNode *existing = lookup_hash(hash_table, hash_hex);
-
-                if (existing != NULL) {
-                    DuplicatePair *new_pair = malloc(sizeof(DuplicatePair));
-                    if (new_pair) {
-                        new_pair->file1 = strdup(existing->filepath);
-                        new_pair->file2 = strdup(filepath);
-                        new_pair->next = duplicate_list;
-                        duplicate_list = new_pair;
-                    }   
+                // Assign Group ID if content is identical; otherwise, start new group 
+                if (node && compare_files(node->filepath, g->filepaths[i])) {
+                    results[processed].group_id = lookup_group_id(ht, hex);
+                    results[processed].is_duplicate = 1;
                 } else {
-                    insert_hash(hash_table, hash_hex, filepath);
+                    results[processed].group_id = current_id++;
+                    results[processed].is_duplicate = 0;
+                    insert_hash_with_id(ht, hex, g->filepaths[i], results[processed].group_id);
                 }
-
-                free(hash_hex);
-                free_hash_context(ctx);
+                free(hex); free_hash_context(ctx);
             }
+            processed++;
+            if (cb) cb("Verifying content...", 20 + (processed * 80 / num_files), num_files);
         }
-        current_group = current_group->next;
     }
 
-    while (groups != NULL) {
-        SizeGroup *next = groups->next;
-        for (size_t i = 0; i < groups->count; i++) free(groups->filepaths[i]);
-        free(groups->filepaths);
-        free(groups);
-        groups = next;
+    *total_out = num_files;
+    free_hash_table(ht);
+    while (groups) {
+        SizeGroup *t = groups->next;
+        free(groups->filepaths); free(groups);
+        groups = t;
     }
-
-    free_hash_table(hash_table);
-    return duplicate_list;
+    return results;
 }
 
-void mark_duplicates(char **all_paths, int num_paths,
-                     DuplicatePair *pairs_head, MarkedFile *out_marks) {
-    if (!all_paths || !out_marks) return;
-
-    HashTable *dup_lookup = create_hash_table();
-    if (!dup_lookup) return;
-
-    for (DuplicatePair *p = pairs_head; p != NULL; p = p->next) {
-        if (p->file1) insert_hash(dup_lookup, p->file1, "dup");
-        if (p->file2) insert_hash(dup_lookup, p->file2, "dup");
-    }
-
-    for (int i = 0; i < num_paths; i++) {
-        out_marks[i].path = all_paths[i];
-        if (!all_paths[i]) {
-            out_marks[i].is_duplicate = 0;
-            continue;
-        }
-        out_marks[i].is_duplicate = (lookup_hash(dup_lookup, all_paths[i]) != NULL);
-    }
-
-    free_hash_table(dup_lookup);
-}
-
-void free_duplicate_pairs(DuplicatePair *head) {
-    DuplicatePair *current = head;
-    while (current != NULL) {
-        DuplicatePair *next = current->next;
-        if (current->file1) free(current->file1);
-        if (current->file2) free(current->file2);
-        free(current);
-        current = next;
-    }
+void free_results(MarkedFile *results, int count) {
+    for (int i = 0; i < count; i++) free(results[i].path);
+    free(results);
 }
