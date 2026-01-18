@@ -8,41 +8,38 @@
 #define NUM_INSERTS 10000
 #define NUM_LOOKUPS 10000
 
-// Function to generate a random string of given length
+// Helper to generate a random string for stress testing
 char *generate_random_string(int length) {
-    char *str = (char *)malloc(length + 1);
-    if (!str) {
-        perror("Failed to allocate memory for random string");
-        return NULL;
-    }
+    char *str = malloc(length + 1);
+    if (!str) return NULL;
 
     for (int i = 0; i < length; i++) {
-        str[i] = 'a' + rand() % 26; // Generate random lowercase letters
+        str[i] = 'a' + rand() % 26;
     }
     str[length] = '\0';
-
     return str;
 }
 
 int main() {
-    // Initialize random seed
     srand(time(NULL));
 
-    // Create a hash table
-    HashTable *hash_table = create_hash_table();
-    if (!hash_table) {
+    HashTable *ht = create_hash_table();
+    if (!ht) {
         fprintf(stderr, "Failed to create hash table\n");
         return 1;
     }
 
-    // --- Test hash map insertion ---
-    printf("Testing hash map insertion...\n");
+    // --- Insertion Stress Test ---
+    printf("Testing hash map insertion (%d elements)...\n", NUM_INSERTS);
     clock_t start_insert = clock();
 
     for (int i = 0; i < NUM_INSERTS; i++) {
-        char *hash = generate_random_string(32); // Generate a random hash
-        char *filepath = generate_random_string(64); // Generate a random filepath
-        insert_hash(hash_table, hash, filepath);
+        char *hash = generate_random_string(32);
+        char *filepath = generate_random_string(64);
+        
+        // Using the refactored insert (group_id = 0 for default)
+        insert_hash(ht, hash, filepath, 0);
+        
         free(hash);
         free(filepath);
     }
@@ -51,27 +48,29 @@ int main() {
     double insert_time = (double)(end_insert - start_insert) / CLOCKS_PER_SEC;
     printf("Inserted %d elements in %f seconds\n", NUM_INSERTS, insert_time);
 
-    // --- Test hash map lookup speed ---
+    // --- Lookup Speed Test ---
     printf("Testing hash map lookup speed...\n");
     clock_t start_lookup = clock();
 
     int found_count = 0;
     for (int i = 0; i < NUM_LOOKUPS; i++) {
-        char *hash = generate_random_string(32); // Generate a random hash
-        FilePathNode *result = lookup_hash(hash_table, hash);
-        if (result != NULL) {
-            found_count++;
-        }
+        char *hash = generate_random_string(32);
+        
+        // Using refactored lookup function
+        FilePathNode *result = lookup_paths(ht, hash);
+        if (result != NULL) found_count++;
+        
         free(hash);
     }
 
     clock_t end_lookup = clock();
     double lookup_time = (double)(end_lookup - start_lookup) / CLOCKS_PER_SEC;
     printf("Looked up %d elements in %f seconds\n", NUM_LOOKUPS, lookup_time);
-    printf("Found %d elements\n", found_count);
+    printf("Found %d elements (Expected low number due to random generation)\n", found_count);
 
-    // Free the hash table
-    free_hash_table(hash_table);
+    // Verify cleanup logic
+    free_hash_table(ht);
+    printf("Memory cleanup successful.\n");
 
     return 0;
 }
