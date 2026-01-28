@@ -14,14 +14,15 @@ int main() {
         navigate_directory_selection();
         
         if (strlen(final_selected_path) == 0) {
-            if (show_confirmation_popup("Exit Deduplicator?")) running = 0;
+            if (show_popup("Exit Deduplicator?", 1)) running = 0;
             continue; 
         }
 
         // --- STAGE 2: Confirmation ---
         char confirm_msg[1100];
-        snprintf(confirm_msg, sizeof(confirm_msg), "Start scan in: %s?", final_selected_path);
-        if (!show_confirmation_popup(confirm_msg)) {
+        snprintf(confirm_msg, sizeof(confirm_msg), "Start scan in: %.50s?", final_selected_path);
+        
+        if (!show_popup(confirm_msg, 1)) {
             memset(final_selected_path, 0, sizeof(final_selected_path));
             continue;
         }
@@ -31,48 +32,16 @@ int main() {
         MarkedFile *results = find_duplicates(final_selected_path, &total, update_scan_progress);
 
         if (!results || total == 0) {
-            show_confirmation_popup("No duplicates found. Press any key...");
-            memset(final_selected_path, 0, sizeof(final_selected_path));
+            show_popup("No duplicates found.", 0);
             if (results) free_results(results, total);
+            memset(final_selected_path, 0, sizeof(final_selected_path));
             continue;
         }
 
-        // --- STAGE 4: Results/Selection ---
-        int ch, cursor = 0, viewing = 1;
-        int *marks = calloc(total, sizeof(int));
-        keypad(results_window, TRUE);
-
-        while (viewing) {
-            show_results_screen(results, total, cursor, marks);
-            ch = wgetch(results_window);
-
-            if (ch == KEY_UP && cursor > 0) cursor--;
-            else if (ch == KEY_DOWN && cursor < total - 1) cursor++;
-            else if (ch == ' ' || ch == 10) {
-                marks[cursor] = !marks[cursor]; // Toggle selection
-            }
-            else if (ch == 'd' || ch == 'D') {
-                // --- STAGE 5: Confirmation (Action) ---
-                if (show_confirmation_popup("Confirm deletion of all marked files?")) {
-                    // --- STAGE 6: Verification of Action ---
-                    execute_deletion(results, marks, total);
-                    show_confirmation_popup("Action Verified: Files Deleted. Press any key...");
-                    viewing = 0; // Break Results Loop
-                }
-            }
-            else if (ch == 'b' || ch == 'B') {
-                viewing = 0; // Return to selection
-            }
-            else if (ch == 'q' || ch == 'Q' || ch == 27) {
-                if (show_confirmation_popup("Exit Deduplicator?")) {
-                    viewing = 0;
-                    running = 0;
-                }
-            }
-        }
+        // --- STAGE 4: Results/Selection & STAGE 5-6: Action/Verification ---
+        navigate_results_view(results, total);
 
         // --- STAGE 7: Return to Directory Selection ---
-        free(marks);
         free_results(results, total);
         memset(final_selected_path, 0, sizeof(final_selected_path)); 
     }

@@ -6,7 +6,7 @@
 #include <string.h>
 #include <openssl/evp.h>
 
-#define BUFFER_SIZE 8192 // Define a reasonable buffer size
+#define BUFFER_SIZE (1024 * 1024) // Define a reasonable buffer size
 
 HashContext* init_hash() {
     HashContext* context = malloc(sizeof(HashContext));

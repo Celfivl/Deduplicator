@@ -1,65 +1,63 @@
-// test_tui.c
 #include <ncurses.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "tui_interface.h"
 #include "deduplicator.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-void simulate_input(int key, int num_times) {
-    for (int i = 0; i < num_times; i++) {
-        ungetch(key);
-    }
-}
-
-int main() {
-    if (init_tui() != 0) {
-        fprintf(stderr, "Failed to initialize TUI\n");
-        return 1;
-    }
-
-    mvprintw(0, 0, "MANUAL MODE: Select a directory to trigger Progress Test.");
-    refresh();
-    navigate_directory_selection(); 
-
-    const char *test_stages[] = {
-        "Traversing subdirectories",
-        "Collecting file meta-data",
-        "Hashing matched files",
-        "Finalizing results"
-    };
-
+/* Mock engine runner to simulate the progress bar and results generation */
+MarkedFile* simulate_engine_run(const char *path, int *count) {
+    const char *stages[] = {"Scanning", "Hashing", "Comparing", "Finalizing"};
+    *count = 4;
+    
     for (int i = 0; i < 4; i++) {
         for (int p = 0; p <= 100; p += 25) {
-            update_scan_progress(test_stages[i], p, (i + 1) * 125);
+            update_scan_progress(stages[i], p, (i + 1) * 10);
             #ifdef _WIN32
-            Sleep(100); 
+            Sleep(100);
             #endif
         }
     }
 
-    /* Mock data to test 18A Group-ID rendering */
-    int mock_total = 4;
-    MarkedFile mock_results[4] = {
-        { .path = "C:\\Data\\file_a.txt", .group_id = 1, .is_duplicate = 0 },
-        { .path = "C:\\Backup\\file_a_copy.txt", .group_id = 1, .is_duplicate = 1 },
-        { .path = "C:\\Photos\\image.png", .group_id = 2, .is_duplicate = 0 },
-        { .path = "C:\\Old\\image_backup.png", .group_id = 2, .is_duplicate = 1 }
-    };
+    MarkedFile *mock = malloc(sizeof(MarkedFile) * (*count));
+    mock[0] = (MarkedFile){strdup("C:\\Mock\\file1.exe"), 1, 0};
+    mock[1] = (MarkedFile){strdup("C:\\Mock\\file1_copy.exe"), 1, 1};
+    mock[2] = (MarkedFile){strdup("C:\\Mock\\data.bin"), 2, 0};
+    mock[3] = (MarkedFile){strdup("C:\\Mock\\data_old.bin"), 2, 1};
+    return mock;
+}
 
-    /* Verify transition to interactive results review */
-    navigate_results_view(mock_results, mock_total); 
+int main() {
+    if (init_tui() != 0) return 1;
 
-    mvprintw(LINES - 1, 2, "18A Test Complete. Press any key to exit.");
-    refresh();
-    getch();
+    while (1) {
+        // 1. Path Selection Phase
+        navigate_directory_selection();
+
+        // If final_selected_path is empty, user pressed 'Q' to quit the app
+        if (strlen(final_selected_path) == 0) break;
+
+        // 2. Simulation Phase (Engine Push)
+        int result_count = 0;
+        MarkedFile *results = simulate_engine_run(final_selected_path, &result_count);
+
+        // 3. Results/Deletion Phase
+        // This function must return control once 'D' or 'Q' is pressed
+        navigate_results_view(results, result_count);
+
+        // 4. Cleanup & Reset for next "Run"
+        for (int i = 0; i < result_count; i++) free(results[i].path);
+        free(results);
+        
+        // Clear global path so the browser starts fresh
+        memset(final_selected_path, 0, sizeof(final_selected_path));
+    }
 
     end_tui();
-
-    printf("\nTest Session Complete.\nTarget Path: %s\n", final_selected_path);
+    printf("Test Suite Clean Exit.\n");
     return 0;
 }
