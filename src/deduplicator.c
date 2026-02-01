@@ -25,7 +25,12 @@ static SizeGroup *add_group(SizeGroup **head, off_t size) {
 int compare_files(const char *file1, const char *file2) {
     FILE *f1 = fopen(file1, "rb"), *f2 = fopen(file2, "rb");
     if (!f1 || !f2) {
-        if (f1) fclose(f1); if (f2) fclose(f2);
+        if (f1) {
+            fclose(f1);
+        }
+        if (f2) {
+            fclose(f2);
+        }
         return 0;
     }
 

@@ -60,7 +60,7 @@ FileEntry** scan_directory_recursive(const char *path, int *num_files) {
             continue;
         }
 
-        char full_path[PATH_MAX];
+        char full_path[4096];
         snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
 
         FileEntry *new_entry = create_file_entry(full_path);

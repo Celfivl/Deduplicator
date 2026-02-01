@@ -29,15 +29,14 @@ static void draw_window_frame(WINDOW *win, const char *title, const char *legend
     box(win, 0, 0);
     
     if (title) mvwprintw(win, 0, 2, " %s ", title);
-    if (legend) mvwprintw(win, h - 2, 2, " %s ", legend);
+    
+    if (legend) mvwprintw(win, h - 1, 2, " %s ", legend);
 
-    const char *footer = "Copyright 2026 G. Melancon JR";
+    const char *footer = " Copyright 2026 G. Melancon JR ";
     int footer_len = (int)strlen(footer);
     
-    if (w > footer_len + 4) {
-        attron(A_DIM);
+    if (w > footer_len + 20) { 
         mvwprintw(win, h - 1, w - footer_len - 2, "%s", footer);
-        attroff(A_DIM);
     }
 }
 
@@ -135,21 +134,41 @@ void populate_directory_list(const char *path) {
 }
 
 void show_directory_selection_screen() {
-    int h, w; getmaxyx(dir_window, h, w);
-    int max = h - 4;
-    if (selected_dir < scroll_offset) scroll_offset = selected_dir;
-    else if (selected_dir >= scroll_offset + max) scroll_offset = selected_dir - max + 1;
+    int h, w; 
+    getmaxyx(dir_window, h, w);
+    
+    int max_visible = h - 4;
+    
+    if (selected_dir < scroll_offset) {
+        scroll_offset = selected_dir;
+    } else if (selected_dir >= scroll_offset + max_visible) {
+        scroll_offset = selected_dir - max_visible + 1;
+    }
 
     draw_window_frame(dir_window, current_browsing_path, "[ENTER] Open  [SPACE] Select  [Q] Exit");
 
+    int max_name_width = w - 10; 
+    if (max_name_width < 10) max_name_width = 10;
+
     FileInfo *curr = directory_list.head;
-    for (int i = 0; i < scroll_offset && curr; i++) curr = curr->next;
-    for (int i = 0; i < max && curr; i++) {
-        if (scroll_offset + i == selected_dir) wattron(dir_window, A_REVERSE);
-        mvwprintw(dir_window, i + 2, 2, " [DIR] %-50.50s", curr->name);
+    for (int i = 0; i < scroll_offset && curr; i++) {
+        curr = curr->next;
+    }
+
+    for (int i = 0; i < max_visible && curr; i++) {
+        if (scroll_offset + i == selected_dir) {
+            wattron(dir_window, A_REVERSE);
+        }
+        
+        mvwprintw(dir_window, i + 2, 2, " [%s] %.*s", 
+                  curr->is_directory ? "DIR" : "FILE", 
+                  max_name_width, 
+                  curr->name);
+
         wattroff(dir_window, A_REVERSE);
         curr = curr->next;
     }
+
     wrefresh(dir_window);
 }
 
@@ -189,10 +208,13 @@ void update_scan_progress(const char *step, int percentage, int found) {
 }
 
 void show_results_screen(MarkedFile *res, int total, int cursor, int *marks, int scroll_offset) {
-    int h, w; getmaxyx(results_window, h, w);
+    int h, w;
+    getmaxyx(results_window, h, w);
+    
+    int max_display_width = w - 12; 
+
     draw_window_frame(results_window, "Analysis Results", "[SPACE] Mark  [D] Delete  [Q] Back");
     
-    int max_visible_lines = h - 4;
     int y = 2;
 
     for (int i = scroll_offset; i < total; i++) {
@@ -207,10 +229,22 @@ void show_results_screen(MarkedFile *res, int total, int cursor, int *marks, int
 
         if (y >= h - 2) break;
 
+        char display_path[4096];
+        if ((int)strlen(res[i].path) > max_display_width) {
+            snprintf(display_path, max_display_width, "...%s", 
+                     res[i].path + (strlen(res[i].path) - max_display_width + 3));
+        } else {
+            strncpy(display_path, res[i].path, sizeof(display_path) - 1);
+            display_path[sizeof(display_path) - 1] = '\0';
+        }
+
         if (i == cursor) wattron(results_window, A_REVERSE);
-        mvwprintw(results_window, y++, 2, " [%c] %s", marks[i] ? 'X' : ' ', res[i].path);
+        
+        mvwprintw(results_window, y++, 2, " [%c] %s", marks[i] ? 'X' : ' ', display_path);
+        
         if (i == cursor) wattroff(results_window, A_REVERSE);
     }
+
     wrefresh(results_window);
 }
 
@@ -220,7 +254,7 @@ int navigate_results_view(MarkedFile *res, int total) {
     int *marks = calloc(total, sizeof(int));
 
     while (1) {
-        int h, w; getmaxyx(results_window, h, w);
+        int h, w; getmaxyx(results_window, h, w); (void)w;
         int max_visible = h - 5;
 
         if (cursor < result_scroll) result_scroll = cursor;
@@ -252,9 +286,21 @@ int navigate_results_view(MarkedFile *res, int total) {
 void init_file_list(FileInfoList *l) { l->head = NULL; l->tail = NULL; l->count = 0; }
 void add_to_list(FileInfoList *l, const char *n, int d) {
     FileInfo *node = malloc(sizeof(FileInfo));
-    strncpy(node->name, n, 255); node->is_directory = d; node->next = NULL;
-    if (l->tail) l->tail->next = node; else l->head = node;
-    l->tail = node; l->count++;
+    if (!node) return;
+    strncpy(node->name, n, sizeof(node->name) - 1);
+    node->name[sizeof(node->name) - 1] = '\0';
+
+    node->is_directory = d;
+    node->next = NULL;
+
+    if (l->tail) {
+        l->tail->next = node;
+    } else {
+        l->head = node;
+    }
+
+    l->tail = node;
+    l->count++;
 }
 void free_ui_list(FileInfoList *l) {
     FileInfo *c = l->head;
